@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Think About It</title>
+  <style>
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      padding: 15px; 
+      width: 350px;
+      color: #333;
+    }
+    h1 {
+      color: #2c3e50;
+      margin-top: 0;
+      font-size: 20px;
+      text-align: center;
+    }
+    h2 {
+      color: #2c3e50;
+      font-size: 18px;
+      margin-top: 0;
+    }
+    #analyze, #save-settings, #back-to-main {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      transition: background-color 0.3s;
+    }
+    #analyze, #save-settings {
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    #analyze:hover, #save-settings:hover, #back-to-main:hover {
+      background-color: #2980b9;
+    }
+    .button-group {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 15px;
+    }
+    #result, #settings-message {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      background-color: #f8f9fa;
+      border-left: 3px solid #3498db;
+      line-height: 1.5;
+      min-height: 50px;
+    }
+    .footer {
+      margin-top: 15px;
+      font-size: 11px;
+      color: #7f8c8d;
+      text-align: center;
+    }
+    .form-group {
+      margin-top: 15px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    #settings-link {
+      display: block;
+      margin-top: 5px;
+      color: #3498db;
+      text-decoration: none;
+    }
+    .radio-group {
+      margin-top: 8px;
+    }
+    .radio-option {
+      margin-bottom: 10px;
+      padding: 8px;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .radio-option:hover {
+      background-color: #f5f9ff;
+    }
+    .radio-option input {
+      margin-right: 8px;
+      cursor: pointer;
+    }
+    .radio-option label {
+      display: inline;
+      font-weight: bold;
+      margin-bottom: 0;
+      cursor: pointer;
+    }
+    .style-description {
+      margin-top: 4px;
+      margin-left: 22px;
+      font-size: 11px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <h1>Think About It</h1>
+  <div id="main-interface">
+    <button id="analyze">Should I buy this?</button>
+    <div id="result"></div>
+    <div class="footer">
+      Product purchasing advisor powered by AI
+      <a href="#" id="settings-link">Settings</a>
+      <a href="#" id="debug-link" style="margin-left: 10px; font-size: 11px; color: #666;">Debug</a>
+      <div id="debug-status" style="margin-top: 8px; font-size: 11px; color: #666;"></div>
+    </div>
+  </div>
+  
+  <div id="settings-interface" style="display: none;">
+    <h2>Settings</h2>
+    <div class="form-group">
+      <label for="api-key">OpenAI API Key:</label>
+      <input type="password" id="api-key" placeholder="Enter your OpenAI API key">
+    </div>
+    <div class="form-group">
+      <label>Response Style:</label>
+      <div class="radio-group">
+        <div class="radio-option">
+          <input type="radio" id="witty-style" name="response-style" value="witty" checked>
+          <label for="witty-style">Witty & Conversational</label>
+          <div class="style-description">Fun, light-hearted advice that playfully questions your purchase</div>
+        </div>
+        <div class="radio-option">
+          <input type="radio" id="practical-style" name="response-style" value="practical">
+          <label for="practical-style">Practical & Data-driven</label>
+          <div class="style-description">Serious, fact-based analysis focusing on value and necessity</div>
+        </div>
+      </div>
+    </div>
+    <div class="button-group">
+      <button id="save-settings">Save</button>
+      <button id="back-to-main">Back</button>
+      <button id="reset-usage" style="background-color: #f0f0f0; color: #666; border: 1px solid #ddd; margin-left: 10px; font-size: 11px; padding: 8px; cursor: pointer;">Reset Usage (Test Only)</button>
+    </div>
+    <div id="settings-message"></div>
+    <div id="usage-stats" style="margin-top: 15px; font-size: 12px; color: #666;"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
