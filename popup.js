@@ -123,6 +123,181 @@ async function resetUsageCount() {
   });
 }
 
+// Function to save a product to storage
+async function saveProduct(productData) {
+  return new Promise((resolve, reject) => {
+    try {
+      // First retrieve existing saved products
+      chrome.storage.sync.get("savedProducts", (data) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error retrieving saved products:", chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        
+        // Get existing products or create empty array if none
+        const savedProducts = data.savedProducts || [];
+        
+        // Create new product entry
+        const productEntry = {
+          id: Date.now().toString(), // Unique ID based on timestamp
+          title: productData.title,
+          url: productData.url,
+          price: {
+            value: parseFloat(productData.price.replace(/[^0-9.]/g, '')), // Extract numeric value
+            currency: productData.price.replace(/[0-9.]/g, '').trim(), // Extract currency symbol
+            original: productData.price // Keep original string
+          },
+          timestamp: new Date().toISOString(),
+          status: "thinking" // Initial status - "thinking", "bought", or "saved"
+        };
+        
+        // Add to array
+        savedProducts.push(productEntry);
+        
+        // Save back to storage
+        chrome.storage.sync.set({ "savedProducts": savedProducts }, () => {
+          if (chrome.runtime.lastError) {
+            console.error("Error saving product:", chrome.runtime.lastError);
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(productEntry);
+          }
+        });
+      });
+    } catch (error) {
+      console.error("Exception in saveProduct:", error);
+      reject(error);
+    }
+  });
+}
+
+// Function to get all saved products
+async function getSavedProducts() {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.sync.get("savedProducts", (data) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error retrieving saved products:", chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        
+        resolve(data.savedProducts || []);
+      });
+    } catch (error) {
+      console.error("Exception in getSavedProducts:", error);
+      reject(error);
+    }
+  });
+}
+
+// Function to update product status (bought or saved)
+async function updateProductStatus(productId, newStatus) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.sync.get("savedProducts", (data) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error retrieving saved products:", chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        
+        const savedProducts = data.savedProducts || [];
+        const updatedProducts = savedProducts.map(product => {
+          if (product.id === productId) {
+            return { ...product, status: newStatus };
+          }
+          return product;
+        });
+        
+        chrome.storage.sync.set({ "savedProducts": updatedProducts }, () => {
+          if (chrome.runtime.lastError) {
+            console.error("Error updating product status:", chrome.runtime.lastError);
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(true);
+          }
+        });
+      });
+    } catch (error) {
+      console.error("Exception in updateProductStatus:", error);
+      reject(error);
+    }
+  });
+}
+
+// Function to remove a product from the list
+async function removeProduct(productId) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.sync.get("savedProducts", (data) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error retrieving saved products:", chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        
+        const savedProducts = data.savedProducts || [];
+        const updatedProducts = savedProducts.filter(product => product.id !== productId);
+        
+        chrome.storage.sync.set({ "savedProducts": updatedProducts }, () => {
+          if (chrome.runtime.lastError) {
+            console.error("Error removing product:", chrome.runtime.lastError);
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(true);
+          }
+        });
+      });
+    } catch (error) {
+      console.error("Exception in removeProduct:", error);
+      reject(error);
+    }
+  });
+}
+
+// Function to calculate total savings
+async function calculateSavings() {
+  try {
+    const products = await getSavedProducts();
+    let totalSavings = 0;
+    
+    // Sum up prices of all products with status "saved"
+    products.forEach(product => {
+      if (product.status === "saved" && product.price && product.price.value) {
+        totalSavings += product.price.value;
+      }
+    });
+    
+    return totalSavings;
+  } catch (error) {
+    console.error("Error calculating savings:", error);
+    return 0;
+  }
+}
+
+// Function to reset all saved products (for development purposes)
+async function resetAllSavedProducts() {
+  return new Promise((resolve, reject) => {
+    try {
+      // Clear the savedProducts array in storage
+      chrome.storage.sync.set({ "savedProducts": [] }, () => {
+        if (chrome.runtime.lastError) {
+          console.error("Error resetting saved products:", chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+        } else {
+          console.log("All saved products have been reset");
+          resolve(true);
+        }
+      });
+    } catch (error) {
+      console.error("Exception in resetAllSavedProducts:", error);
+      reject(error);
+    }
+  });
+}
+
 // Function to check if user has reached the monthly usage limit
 async function hasReachedUsageLimit() {
   const MONTHLY_LIMIT = 5; // Set your desired limit here
@@ -195,15 +370,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Get all UI elements with null checks
   const apiKeyInput = document.getElementById("api-key");
   const settingsLink = document.getElementById("settings-link");
+  const dashboardLink = document.getElementById("dashboard-link");
   const saveSettingsBtn = document.getElementById("save-settings");
   const backToMainBtn = document.getElementById("back-to-main");
+  const backToMainFromDashboardBtn = document.getElementById("back-to-main-from-dashboard");
   const mainInterface = document.getElementById("main-interface");
   const settingsInterface = document.getElementById("settings-interface");
+  const dashboardInterface = document.getElementById("dashboard-interface");
   const wittyStyleRadio = document.getElementById("witty-style");
   const practicalStyleRadio = document.getElementById("practical-style");
   const analyzeButton = document.getElementById("analyze");
   const debugLink = document.getElementById("debug-link");
   const resetUsageBtn = document.getElementById("reset-usage");
+  const resetSavingsBtn = document.getElementById("reset-savings");
+  const productsList = document.getElementById("products-list");
+  const totalSavings = document.getElementById("total-savings");
+  const noProducts = document.getElementById("no-products");
   
   // Create a debug log div to avoid console issues
   function safeLog(message) {
@@ -269,6 +451,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         e.preventDefault();
         mainInterface.style.display = "none";
+        dashboardInterface.style.display = "none";
         settingsInterface.style.display = "block";
       } catch (error) {
         safeLog("Error toggling to settings: " + (error.message || "Unknown error"));
@@ -278,18 +461,113 @@ document.addEventListener("DOMContentLoaded", async () => {
     safeLog("Settings link or interface elements not found");
   }
   
+  // Dashboard toggle
+  if (dashboardLink && mainInterface && dashboardInterface) {
+    dashboardLink.addEventListener("click", async (e) => {
+      try {
+        e.preventDefault();
+        mainInterface.style.display = "none";
+        settingsInterface.style.display = "none";
+        dashboardInterface.style.display = "block";
+        
+        // Load saved products and display them
+        await loadSavedProducts();
+      } catch (error) {
+        safeLog("Error toggling to dashboard: " + (error.message || "Unknown error"));
+      }
+    });
+  } else {
+    safeLog("Dashboard link or interface elements not found");
+  }
+  
   if (backToMainBtn && mainInterface && settingsInterface) {
     backToMainBtn.addEventListener("click", (e) => {
       try {
         e.preventDefault();
         settingsInterface.style.display = "none";
+        dashboardInterface.style.display = "none";
         mainInterface.style.display = "block";
       } catch (error) {
         safeLog("Error returning to main: " + (error.message || "Unknown error"));
       }
     });
   } else {
-    safeLog("Back button or interface elements not found");
+    safeLog("Back button from settings not found");
+  }
+  
+  if (backToMainFromDashboardBtn && mainInterface && dashboardInterface) {
+    backToMainFromDashboardBtn.addEventListener("click", (e) => {
+      try {
+        e.preventDefault();
+        dashboardInterface.style.display = "none";
+        settingsInterface.style.display = "none";
+        mainInterface.style.display = "block";
+      } catch (error) {
+        safeLog("Error returning to main from dashboard: " + (error.message || "Unknown error"));
+      }
+    });
+  } else {
+    safeLog("Back button from dashboard not found");
+  }
+  
+  // Reset savings button for development
+  if (resetSavingsBtn) {
+    resetSavingsBtn.addEventListener("click", async (e) => {
+      try {
+        e.preventDefault();
+        
+        // Create a confirmation dialog using the DOM
+        const confirmed = confirm("Are you sure you want to reset all saved products? This cannot be undone.");
+        
+        if (confirmed) {
+          // Reset all saved products
+          await resetAllSavedProducts();
+          
+          // Reload the dashboard
+          await loadSavedProducts();
+          
+          // Show success message
+          const statusMessage = document.createElement("div");
+          statusMessage.textContent = "All saved products have been reset";
+          statusMessage.style.marginTop = "10px";
+          statusMessage.style.fontSize = "12px";
+          statusMessage.style.color = "#27ae60";
+          
+          // Find the button group and insert after it
+          const buttonGroup = resetSavingsBtn.closest(".button-group");
+          buttonGroup.parentNode.insertBefore(statusMessage, buttonGroup.nextSibling);
+          
+          // Remove the message after a delay
+          setTimeout(() => {
+            if (statusMessage.parentNode) {
+              statusMessage.parentNode.removeChild(statusMessage);
+            }
+          }, 2000);
+        }
+      } catch (error) {
+        safeLog("Error resetting savings: " + (error.message || "Unknown error"));
+        
+        // Show error message
+        const statusMessage = document.createElement("div");
+        statusMessage.textContent = "Error resetting savings. Please try again.";
+        statusMessage.style.marginTop = "10px";
+        statusMessage.style.fontSize = "12px";
+        statusMessage.style.color = "#e74c3c";
+        
+        // Find the button group and insert after it
+        const buttonGroup = resetSavingsBtn.closest(".button-group");
+        buttonGroup.parentNode.insertBefore(statusMessage, buttonGroup.nextSibling);
+        
+        // Remove the message after a delay
+        setTimeout(() => {
+          if (statusMessage.parentNode) {
+            statusMessage.parentNode.removeChild(statusMessage);
+          }
+        }, 3000);
+      }
+    });
+  } else {
+    safeLog("Reset savings button not found");
   }
   
   // Reset usage counter (for testing purposes)
@@ -619,6 +897,15 @@ async function handleAnalyze() {
       return;
     }
     
+    // Save the product data for tracking
+    try {
+      await saveProduct(productData);
+      console.log("Product saved for tracking:", productData.title);
+    } catch (error) {
+      console.error("Error saving product data:", error);
+      // Continue with analysis even if saving fails
+    }
+    
     // Get the user's preferred response style
     const responseStyle = await getResponseStyle();
     
@@ -684,6 +971,103 @@ async function handleAnalyze() {
   } catch (error) {
     resultElement.innerText = "Error: " + error.message;
     console.error("Think About It extension error:", error);
+  }
+}
+
+// Function to load and display saved products
+async function loadSavedProducts() {
+  try {
+    // Get the products list element
+    const productsList = document.getElementById("products-list");
+    const noProducts = document.getElementById("no-products");
+    const totalSavingsEl = document.getElementById("total-savings");
+    
+    if (!productsList || !noProducts || !totalSavingsEl) {
+      console.error("Required DOM elements not found");
+      return;
+    }
+    
+    // Clear existing content
+    productsList.innerHTML = "";
+    
+    // Get saved products
+    const products = await getSavedProducts();
+    
+    // Check if there are any products
+    if (products.length === 0) {
+      noProducts.style.display = "block";
+      totalSavingsEl.style.display = "none";
+      return;
+    }
+    
+    // Hide no products message and show total savings
+    noProducts.style.display = "none";
+    
+    // Calculate and display total savings
+    const totalSavings = await calculateSavings();
+    totalSavingsEl.style.display = "block";
+    totalSavingsEl.textContent = `Total Savings: $${totalSavings.toFixed(2)}`;
+    
+    // Sort products by timestamp, newest first
+    const sortedProducts = [...products].sort((a, b) => 
+      new Date(b.timestamp) - new Date(a.timestamp)
+    );
+    
+    // Create and append elements for each product
+    sortedProducts.forEach(product => {
+      if (product.status === "thinking") {
+        const productEl = document.createElement("div");
+        productEl.className = "product-item";
+        
+        // Format timestamp
+        const date = new Date(product.timestamp);
+        const formattedDate = `${date.toLocaleDateString()} at ${date.toLocaleTimeString()}`;
+        
+        // Create product HTML
+        productEl.innerHTML = `
+          <div class="product-title" title="${product.title}">${product.title}</div>
+          <div class="product-price">${product.price.original}</div>
+          <div class="product-timestamp">Added on ${formattedDate}</div>
+          <div class="product-actions">
+            <button class="action-button bought-button" data-id="${product.id}">I bought it</button>
+            <button class="action-button saved-button" data-id="${product.id}">I saved the money</button>
+            <button class="action-button trash-button" data-id="${product.id}" title="Remove from list">Remove</button>
+          </div>
+        `;
+        
+        // Add the product element to the list
+        productsList.appendChild(productEl);
+      }
+    });
+    
+    // Add event listeners for action buttons
+    document.querySelectorAll(".action-button").forEach(button => {
+      button.addEventListener("click", async (e) => {
+        try {
+          const productId = button.getAttribute("data-id");
+          
+          // Handle trash button differently
+          if (button.classList.contains("trash-button")) {
+            // Remove the product
+            await removeProduct(productId);
+            console.log(`Product ${productId} removed from list`);
+          } else {
+            // Handle bought/saved actions
+            const action = button.classList.contains("bought-button") ? "bought" : "saved";
+            // Update product status
+            await updateProductStatus(productId, action);
+            console.log(`Product ${productId} marked as ${action}`);
+          }
+          
+          // Reload the products list
+          await loadSavedProducts();
+        } catch (error) {
+          console.error("Error handling product action:", error);
+        }
+      });
+    });
+  } catch (error) {
+    console.error("Error loading saved products:", error);
   }
 }
 

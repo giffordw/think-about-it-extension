@@ -109,6 +109,77 @@
       font-size: 11px;
       color: #666;
     }
+    .back-button {
+      background-color: #f0f0f0;
+      color: #333;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .back-button:hover {
+      background-color: #e0e0e0;
+    }
+    .product-item {
+      background-color: #f8f9fa;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 10px;
+      border-left: 3px solid #3498db;
+    }
+    .product-title {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .product-price {
+      color: #e74c3c;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .product-timestamp {
+      color: #7f8c8d;
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+    .product-actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 5px;
+    }
+    .action-button {
+      padding: 5px 8px;
+      font-size: 12px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .bought-button {
+      background-color: #e74c3c;
+      color: white;
+    }
+    .bought-button:hover {
+      background-color: #c0392b;
+    }
+    .saved-button {
+      background-color: #2ecc71;
+      color: white;
+    }
+    .saved-button:hover {
+      background-color: #27ae60;
+    }
+    .trash-button {
+      background-color: #95a5a6;
+      color: white;
+      margin-left: 5px;
+    }
+    .trash-button:hover {
+      background-color: #7f8c8d;
+    }
   </style>
 </head>
 <body>
@@ -118,9 +189,25 @@
     <div id="result"></div>
     <div class="footer">
       Product purchasing advisor powered by AI
-      <a href="#" id="settings-link">Settings</a>
+      <a href="#" id="dashboard-link">Savings</a>
+      <a href="#" id="settings-link" style="margin-left: 10px;">Settings</a>
       <a href="#" id="debug-link" style="margin-left: 10px; font-size: 11px; color: #666;">Debug</a>
       <div id="debug-status" style="margin-top: 8px; font-size: 11px; color: #666;"></div>
+    </div>
+  </div>
+  
+  <div id="dashboard-interface" style="display: none;">
+    <h2>Still Thinking About It</h2>
+    <div id="total-savings" style="margin-bottom: 15px; font-size: 16px; font-weight: bold; color: #27ae60;"></div>
+    <div id="products-list">
+      <!-- Products will be displayed here -->
+    </div>
+    <div id="no-products" style="display: none; text-align: center; padding: 20px; color: #7f8c8d;">
+      You haven't saved any products yet!
+    </div>
+    <div class="button-group">
+      <button id="back-to-main-from-dashboard" class="back-button">Back</button>
+      <button id="reset-savings" style="background-color: #f0f0f0; color: #666; border: 1px solid #ddd; margin-left: 10px; font-size: 11px; padding: 8px; cursor: pointer;">Reset Savings (Dev Only)</button>
     </div>
   </div>
   
