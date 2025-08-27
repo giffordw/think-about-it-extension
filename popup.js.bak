@@ -882,106 +882,107 @@ async function handleAnalyze() {
     
     // Check if API key is available
     if (!apiKey) {
-      resultElement.innerHTML = "Please set your OpenAI API key in the <a href='#' id='open-settings'>settings</a> first.";
-      
-      // Add click handler for the settings link
-      document.getElementById("open-settings").addEventListener("click", (e) => {
-        e.preventDefault();
-        document.getElementById("main-interface").style.display = "none";
-        document.getElementById("settings-interface").style.display = "block";
-      });
+      resultElement.innerText = "Please set your OpenAI API key in the settings first.";
       return;
     }
     
     // Get the active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
-    if (!tab || !tab.id) {
-      resultElement.innerText = "Error: No active tab found";
-      return;
-    }
-    
-    // Check if we're on a page where content scripts can run
-    if (tab.url.startsWith("chrome://") || 
-        tab.url.startsWith("edge://") || 
-        tab.url.startsWith("about:") ||
-        tab.url.startsWith("chrome-extension://")) {
-      resultElement.innerText = "This extension cannot run on browser pages. Please navigate to a product website.";
-      return;
-    }
-    
-    // Helper function to inject content script
-    async function injectContentScript() {
-      return new Promise((resolve, reject) => {
-        resultElement.innerText = "Loading product analyzer...";
-        
-        chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          files: ['content.js']
-        }, (results) => {
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError.message);
-          } else {
-            resolve(results);
-          }
-        });
-      });
-    }
-    
-    // Function to get product data from content script
-    async function getProductData() {
-      return new Promise((resolve) => {
-        chrome.tabs.sendMessage(tab.id, { action: "getProductInfo" }, (response) => {
-          if (chrome.runtime.lastError) {
-            resolve({ error: chrome.runtime.lastError.message });
-          } else if (!response) {
-            resolve({ error: "No product data received. The site might not be compatible." });
-          } else {
-            resolve(response);
-          }
-        });
-      });
-    }
-    
-    // Try to get product data, inject content script if needed
-    let productData;
-    
-    try {
-      // First attempt to get data (content script might already be loaded)
-      productData = await getProductData();
-      
-      // If there's an error, try injecting the content script
-      if (productData.error) {
-        try {
-          // Inject the content script
-          await injectContentScript();
-          
-          // Wait for the content script to initialize
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Try again to get product data
-          productData = await getProductData();
-        } catch (injectionError) {
-          console.error("Content script injection error:", injectionError);
-          productData = { error: `Could not analyze the product page: ${injectionError}` };
-        }
+    // Request product info from the content script
+    const productData = await new Promise((resolve) => {
+      if (!tab || !tab.id) {
+        resolve({ error: "No active tab found. Please make sure you're on a product page." });
+        return;
       }
-    } catch (error) {
-      console.error("Error in product analysis:", error);
-      productData = { error: error.message || "Unknown error occurred" };
-    }
+
+      // Function to send the message with proper error handling
+      const sendMessage = (afterInjection = false) => {
+        try {
+          chrome.tabs.sendMessage(tab.id, { action: "getProductInfo" }, (response) => {
+            // Check for runtime errors
+            if (chrome.runtime.lastError) {
+              console.error("Error sending message:", chrome.runtime.lastError.message);
+              
+              // Add more detailed logging for connection issues
+              const errorMsg = chrome.runtime.lastError.message;
+              if (errorMsg.includes("could not establish connection") || errorMsg.includes("receiving end does not exist")) {
+                console.log("Connection issue detected - content script may not be loaded");
+              }
+              
+              if (!afterInjection) {
+                // First attempt failed, try injecting the content script
+                console.log("Attempting to inject content script...");
+                try {
+                  chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    files: ['content.js'],
+                    world: "MAIN" // Try using MAIN world to ensure script runs in the page context
+                  }, (injectionResults) => {
+                    if (chrome.runtime.lastError) {
+                      console.error("Script injection error:", chrome.runtime.lastError.message);
+                      // Try with a different approach
+                      chrome.scripting.executeScript({
+                        target: { tabId: tab.id },
+                        files: ['content.js']
+                      }, (secondAttemptResults) => {
+                        if (chrome.runtime.lastError) {
+                          console.error("Second script injection error:", chrome.runtime.lastError.message);
+                          resolve({ error: "Could not inject content script. The site may have security restrictions." });
+                          return;
+                        }
+                        console.log("Content script injected on second attempt, waiting for initialization...");
+                        // Wait a bit longer for the script to initialize
+                        setTimeout(() => sendMessage(true), 1000); // Longer timeout
+                      });
+                      return;
+                    }
+                    
+                    console.log("Content script injected successfully, waiting for initialization...");
+                    // Wait a bit longer for the script to initialize - increased timeout
+                    setTimeout(() => sendMessage(true), 800);
+                  });
+                } catch (injectionError) {
+                  console.error("Exception during script injection:", injectionError);
+                  resolve({ error: "Error injecting content script: " + injectionError.message });
+                }
+              } else {
+                // Still failed after injection
+                resolve({ error: "Could not establish connection with the page. Please reload the page and try again." });
+              }
+              return;
+            }
+            
+            // Check for empty response
+            if (!response) {
+              resolve({ error: "No product data received. The site might not be compatible." });
+              return;
+            }
+            
+            // Success!
+            resolve(response);
+          });
+        } catch (error) {
+          console.error("Exception in message sending:", error);
+          resolve({ error: "Error communicating with the page: " + error.message });
+        }
+      };
+      
+      // Start the process
+      sendMessage();
+    });
     
-    // Handle errors in product data
+    // Check if we got product data
     if (productData.error) {
-      // Format the error message with helpful information
+      // Format the error message with some helpful information
       let errorMsg = productData.error;
       
       // Provide more context for connection-related errors
       if (errorMsg.includes("establish connection") || errorMsg.includes("connection with the page")) {
         resultElement.innerHTML = `<strong>Error:</strong> ${errorMsg}<br><br>
-        <small>This usually happens because the product analyzer couldn't load properly. Try refreshing the page and making sure you're on a product page.</small>`;
+        <small>This usually happens because the content script couldn't load properly. Try refreshing the page and making sure you're on a product page.</small>`;
       } else {
-        resultElement.innerHTML = `<strong>Error:</strong> ${errorMsg}`;
+        resultElement.innerText = "Error: " + errorMsg;
       }
       return;
     }
