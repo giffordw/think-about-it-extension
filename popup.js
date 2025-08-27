@@ -1014,7 +1014,7 @@ async function handleAnalyze() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "gpt-5-nano",
+        model: "gpt-5-mini",
         messages: [
           { 
             role: "system", 
