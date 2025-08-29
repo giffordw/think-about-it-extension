@@ -575,6 +575,81 @@ function extractMainImage() {
 }
 
 /**
+ * Check for an "Add to Cart" button, a strong indicator of a product page.
+ */
+function hasAddToCartButton() {
+    const buttonSelectors = [
+        'button[data-test*="add-to-cart"]',
+        'button[id*="add-to-cart"]',
+        'button[class*="add-to-cart"]',
+        'button[aria-label*="add to cart" i]',
+        'input[type="submit"][value*="Add to Cart" i]',
+        'button:contains("Add to Cart")',
+        'button:contains("Add to Basket")',
+        'button:contains("Buy Now")'
+    ];
+
+    for (const selector of buttonSelectors) {
+        try {
+            if (document.querySelector(selector)) {
+                return true;
+            }
+        } catch (e) {
+            // Handle pseudo-selectors like :contains if they are not supported
+        }
+    }
+
+    // Fallback to checking text content of all buttons
+    const buttons = document.querySelectorAll('button, input[type="submit"], a[role="button"]');
+    const addToCartRegex = /add to cart|add to basket|buy now/i;
+
+    for (const button of buttons) {
+        const buttonText = button.innerText || button.textContent || button.value || '';
+        if (addToCartRegex.test(buttonText) && !isLikelyRecommendation(button)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * A more robust check to determine if the page is a single product detail page (PDP)
+ * and not a search result or category page.
+ */
+function isProductDetailPage() {
+    // Signal 1: A single, clear title.
+    const title = extractTitle();
+    if (!title) return false;
+
+    // Signal 2: A price is found.
+    const price = extractPrice();
+    if (!price || price === "Price not found") return false;
+
+    // Signal 3: An "Add to Cart" button exists.
+    if (!hasAddToCartButton()) return false;
+
+    // Signal 4: Check for elements common on PDPs but not on search pages.
+    // Presence of a product description or feature bullets is a strong positive signal.
+    const description = document.querySelector('#productDescription, .product-description, #feature-bullets');
+    if (!description) return false;
+
+    // Signal 5: Count the number of items that look like products.
+    // Search pages have many, PDPs should have one.
+    const productItems = document.querySelectorAll('[itemtype*="Product"], .product-item, .s-result-item');
+    if (productItems.length > 5) { // Threshold to avoid triggering on "related items" sections
+        // If we see many items, let's check if there's a main product container to be sure.
+        if (!findMainProductContainer()) {
+            return false;
+        }
+    }
+    
+    // If all checks pass, it's very likely a product detail page.
+    return true;
+}
+
+
+/**
  * Extract the site name
  */
 function extractSiteName() {
@@ -701,10 +776,10 @@ function safeContentLog(message) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   safeContentLog("Think About It: Message received in content script");
   
-  // Log that the content script message handler is working
-  safeContentLog("Think About It: Content script message handler active");
-  
-  if (message.action === "getProductInfo") {
+  if (message.action === "checkForProduct") {
+    // Check if it's a product page and show the CTA if it is
+    handlePageLoad();
+  } else if (message.action === "getProductInfo") {
     // When the popup requests product info, scrape the page and send it back
     const data = scrapeProductInfo();
     safeContentLog("Think About It: Product data scraped");
@@ -758,6 +833,95 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   return true; // Indicates that sendResponse will be called asynchronously
 });
+
+/**
+ * Floating CTA functionality
+ */
+const wittyLines = [
+  "Retail therapy is fun; debt therapy is not.",
+  "Warning: this item may cause buyer’s remorse in 3–5 business days.",
+  "If it doesn’t spark joy and cashback, maybe skip.",
+  "Imagine explaining this purchase to Future You."
+];
+
+const practicalLines = [
+  "Quick pause can save you $$$.",
+  "Same outcome, less spend? Let’s check.",
+  "What else could this money buy this month?",
+  "Borrow, used, or wait? Let’s decide."
+];
+
+let ctaInterval;
+
+function createFloatingCTA(style) {
+  // If CTA already exists, don't create another one
+  if (document.getElementById('think-about-it-cta')) {
+    return;
+  }
+
+  const lines = style === 'witty' ? wittyLines : practicalLines;
+  let currentLineIndex = Math.floor(Math.random() * lines.length);
+
+  const cta = document.createElement('div');
+  cta.id = 'think-about-it-cta';
+  cta.style.position = 'fixed';
+  cta.style.bottom = '20px';
+  cta.style.right = '20px';
+  cta.style.backgroundColor = '#3498db';
+  cta.style.color = 'white';
+  cta.style.padding = '15px';
+  cta.style.borderRadius = '8px';
+  cta.style.zIndex = '10000';
+  cta.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+  cta.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+  cta.style.fontSize = '14px';
+  cta.style.display = 'flex';
+  cta.style.alignItems = 'center';
+  cta.style.gap = '15px';
+
+  const textElement = document.createElement('span');
+  textElement.id = 'cta-text';
+  textElement.innerText = lines[currentLineIndex];
+
+  const button = document.createElement('button');
+  button.innerText = 'Think About It';
+  button.style.backgroundColor = 'white';
+  button.style.color = '#3498db';
+  button.style.border = 'none';
+  button.style.padding = '8px 12px';
+  button.style.borderRadius = '4px';
+  button.style.cursor = 'pointer';
+  button.style.fontWeight = 'bold';
+
+  button.onclick = () => {
+    // This will open the popup
+    chrome.runtime.sendMessage({ action: "openPopup" });
+  };
+
+  cta.appendChild(textElement);
+  cta.appendChild(button);
+  document.body.appendChild(cta);
+
+  // Rotate the text every 20 seconds
+  ctaInterval = setInterval(() => {
+    currentLineIndex = (currentLineIndex + 1) % lines.length;
+    textElement.innerText = lines[currentLineIndex];
+  }, 20000);
+}
+
+function isProductPage() {
+    // Use the more robust check now
+    return isProductDetailPage();
+}
+
+async function handlePageLoad() {
+  if (isProductPage()) {
+    chrome.storage.sync.get("responseStyle", (data) => {
+      const style = data.responseStyle || 'witty';
+      createFloatingCTA(style);
+    });
+  }
+}
 
 safeContentLog("Think About It: Product scraper content script loaded");
 

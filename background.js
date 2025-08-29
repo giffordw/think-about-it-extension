@@ -1,4 +1,3 @@
-
 // Listen for installation of the extension
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Think About It extension has been installed!");
@@ -14,11 +13,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-// Reload content scripts when navigating to a new page
+// Listener for tab updates to inject content script
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    // You could add logic here in the future to determine if 
-    // this is a product page worth analyzing
+  // Inject the content script when the page is fully loaded
+  if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ['content.js']
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error("Error injecting script: " + chrome.runtime.lastError.message);
+      } else {
+        // After injecting, send a message to the content script to check for a product
+        chrome.tabs.sendMessage(tabId, { action: "checkForProduct" });
+      }
+    });
   }
 });
 
