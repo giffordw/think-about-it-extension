@@ -10,6 +10,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log("Think About It log:", message.data);
     sendResponse({ success: true });
   }
+
+  // Handle request from content script to open popup and immediately run analysis
+  if (message.action === "openPopupAndAnalyze") {
+    // Set a temporary flag in storage so the popup knows to auto-run analysis
+    chrome.storage.local.set({ "autoRunAnalyze": true }, () => {
+      // Try to open the action popup programmatically
+      if (chrome.action && chrome.action.openPopup) {
+        try {
+          chrome.action.openPopup();
+        } catch (e) {
+          console.error('Could not open popup programmatically:', e);
+        }
+      }
+    });
+    sendResponse({ status: 'requested' });
+  }
   return true;
 });
 

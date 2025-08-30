@@ -740,6 +740,36 @@ document.addEventListener("DOMContentLoaded", async () => {
   } else {
     safeLog("Analyze button not found - could not attach event listener");
   }
+
+  // If background requested the popup to auto-run analysis, do it now and clear flag
+  try {
+    chrome.storage.local.get(["autoRunAnalyze"], async (data) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error reading autoRunAnalyze flag:', chrome.runtime.lastError);
+        return;
+      }
+
+      if (data && data.autoRunAnalyze) {
+        // Clear the flag so we don't auto-run again
+        chrome.storage.local.remove(["autoRunAnalyze"], () => {
+          if (chrome.runtime.lastError) {
+            console.error('Error clearing autoRunAnalyze flag:', chrome.runtime.lastError);
+          }
+        });
+
+        // Delay slightly to ensure UI is ready
+        setTimeout(() => {
+          try {
+            handleAnalyze();
+          } catch (e) {
+            console.error('Error auto-running analysis:', e);
+          }
+        }, 150);
+      }
+    });
+  } catch (e) {
+    console.error('Exception checking autoRunAnalyze flag:', e);
+  }
   
   // Add debug button functionality
   if (debugLink) {
