@@ -251,7 +251,9 @@
   
   <div id="dashboard-interface" style="display: none;">
     <h2>Still Thinking About It</h2>
-    <div id="total-savings" style="margin-bottom: 15px; font-size: 16px; font-weight: bold; color: #27ae60;"></div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <a href="#" id="total-savings" style="margin-bottom: 15px; font-size: 16px; font-weight: bold; color: #27ae60; text-decoration:none;">Total Savings</a>
+    </div>
     <div id="products-list">
       <!-- Products will be displayed here -->
     </div>
@@ -261,6 +263,25 @@
     <div class="button-group">
       <button id="back-to-main-from-dashboard" class="back-button">Back</button>
       <button id="reset-savings" style="background-color: #f0f0f0; color: #666; border: 1px solid #ddd; margin-left: 10px; font-size: 11px; padding: 8px; cursor: pointer;">Reset Savings (Dev Only)</button>
+    </div>
+  </div>
+
+  <div id="contributors-interface" style="display:none;">
+    <h2>You saved the money!</h2>
+    <div id="contributors-list" style="max-height:300px; overflow:auto; margin-bottom:10px;"></div>
+    <div class="button-group">
+      <button id="contributors-back" class="back-button">Back</button>
+    </div>
+  </div>
+
+  <!-- Confirmation modal for deletion -->
+  <div id="confirm-modal" style="display:none; position:fixed; left:0; right:0; top:0; bottom:0; background:rgba(0,0,0,0.4); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:white; padding:16px; border-radius:6px; width:320px; margin:auto;">
+      <div id="confirm-message" style="margin-bottom:12px; font-size:14px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button id="confirm-no" class="back-button">No</button>
+        <button id="confirm-yes" style="background-color:#e74c3c; color:white; border:none; padding:8px 12px; border-radius:4px; cursor:pointer;">Yes</button>
+      </div>
     </div>
   </div>
   

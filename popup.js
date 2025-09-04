@@ -418,6 +418,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   const practicalStyleRadio = document.getElementById("practical-style");
   const analyzeButton = document.getElementById("analyze");
   const debugLink = document.getElementById("debug-link");
+  const contributorsLink = document.getElementById("contributors-link");
+  const contributorsInterface = document.getElementById("contributors-interface");
+  const contributorsListEl = document.getElementById("contributors-list");
+  const contributorsBackBtn = document.getElementById("contributors-back");
+  const confirmModal = document.getElementById("confirm-modal");
+  const confirmMessageEl = document.getElementById("confirm-message");
+  const confirmYesBtn = document.getElementById("confirm-yes");
+  const confirmNoBtn = document.getElementById("confirm-no");
   const resetUsageBtn = document.getElementById("reset-usage");
   const resetSavingsBtn = document.getElementById("reset-savings");
   const productsList = document.getElementById("products-list");
@@ -787,6 +795,231 @@ document.addEventListener("DOMContentLoaded", async () => {
     safeLog('Save Now button not found - skipping save-now wiring');
   }
 
+  // Contributors view wiring: Total savings becomes the link to contributors
+  const totalSavingsEl = document.getElementById('total-savings');
+  if (totalSavingsEl && contributorsInterface && contributorsListEl && contributorsBackBtn && confirmModal) {
+    totalSavingsEl.addEventListener('click', async (e) => {
+      try {
+        e.preventDefault();
+        // Show contributors interface
+        dashboardInterface.style.display = 'none';
+        mainInterface.style.display = 'none';
+        contributorsInterface.style.display = 'block';
+
+        // Render contributors
+        await renderContributors();
+      } catch (error) {
+        console.error('Error opening contributors view:', error);
+      }
+    });
+
+    contributorsBackBtn.addEventListener('click', (e) => {
+      try {
+        e.preventDefault();
+        contributorsInterface.style.display = 'none';
+        dashboardInterface.style.display = 'block';
+      } catch (error) {
+        console.error('Error returning from contributors view:', error);
+      }
+    });
+  }
+
+  // Confirmation modal helpers
+  function openConfirmModal(message, onYes) {
+    if (!confirmModal) return;
+    confirmMessageEl.textContent = message || 'Are you sure?';
+    confirmModal.style.display = 'flex';
+
+    // Focus the No button by default (No is the safe default)
+    try {
+      confirmNoBtn.focus();
+    } catch (e) {
+      // ignore
+    }
+
+    // Attach one-time handlers
+    function handleYes() {
+      closeConfirmModal();
+      try { onYes && onYes(); } catch (e) { console.error(e); }
+    }
+
+    function handleNo() {
+      closeConfirmModal();
+    }
+
+    confirmYesBtn.addEventListener('click', handleYes, { once: true });
+    confirmNoBtn.addEventListener('click', handleNo, { once: true });
+
+    // Escape to cancel
+    function escHandler(e) {
+      if (e.key === 'Escape') { closeConfirmModal(); }
+    }
+    document.addEventListener('keydown', escHandler, { once: true });
+  }
+
+  function closeConfirmModal() {
+    if (!confirmModal) return;
+    confirmModal.style.display = 'none';
+  }
+
+  // Restore a previously removed product (used for undo)
+  async function restoreProduct(productObj) {
+    try {
+      const products = await getSavedProducts();
+      const existing = products || [];
+      // Avoid duplicates: if same id already exists, don't re-add
+      if (existing.some(p => p.id === productObj.id)) return false;
+      existing.push(productObj);
+      return new Promise((resolve, reject) => {
+        chrome.storage.sync.set({ savedProducts: existing }, () => {
+          if (chrome.runtime.lastError) {
+            console.error('Error restoring product:', chrome.runtime.lastError);
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(true);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Exception in restoreProduct:', error);
+      return false;
+    }
+  }
+
+  // Show a small undo toast at the bottom of the popup
+  function showUndoToast(message, onUndo, timeoutMs = 6000) {
+    // Remove any existing toast
+    const existing = document.getElementById('undo-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'undo-toast';
+    toast.style.position = 'fixed';
+    toast.style.left = '50%';
+    toast.style.transform = 'translateX(-50%)';
+    toast.style.bottom = '12px';
+    toast.style.zIndex = '100000';
+    toast.style.background = '#333';
+    toast.style.color = '#fff';
+    toast.style.padding = '10px 12px';
+    toast.style.borderRadius = '6px';
+    toast.style.display = 'flex';
+    toast.style.alignItems = 'center';
+    toast.style.gap = '10px';
+    toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+
+    const msg = document.createElement('div');
+    msg.style.fontSize = '13px';
+    msg.textContent = message || 'Item removed';
+
+    const undoBtn = document.createElement('button');
+    undoBtn.textContent = 'Undo';
+    undoBtn.style.background = '#2ecc71';
+    undoBtn.style.border = 'none';
+    undoBtn.style.color = '#fff';
+    undoBtn.style.padding = '6px 8px';
+    undoBtn.style.borderRadius = '4px';
+    undoBtn.style.cursor = 'pointer';
+
+    toast.appendChild(msg);
+    toast.appendChild(undoBtn);
+    document.body.appendChild(toast);
+
+    let removed = false;
+    const timer = setTimeout(() => {
+      if (!removed) toast.remove();
+    }, timeoutMs);
+
+    undoBtn.addEventListener('click', async () => {
+      removed = true;
+      clearTimeout(timer);
+      try {
+        await onUndo();
+      } catch (e) {
+        console.error('Error during undo:', e);
+      }
+      toast.remove();
+    });
+  }
+
+  // Render contributors (items that contributed to total savings -> status === 'saved')
+  async function renderContributors() {
+    if (!contributorsListEl) return;
+    contributorsListEl.innerHTML = '';
+
+    try {
+      const products = await getSavedProducts();
+      const contributors = (products || []).filter(p => p.status === 'saved');
+
+      if (!contributors.length) {
+        contributorsListEl.innerHTML = '<div style="color:#7f8c8d; padding:12px;">No contributors yet.</div>';
+        return;
+      }
+
+      // Sort newest first
+      contributors.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      contributors.forEach(product => {
+        const el = document.createElement('div');
+        el.className = 'product-item';
+        const date = new Date(product.timestamp);
+        const formatted = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+        // Use anchor to link back to product page
+        const titleHtml = product.url ? `<a href="${product.url}" target="_blank" style="color:inherit; text-decoration:none;">${product.title}</a>` : product.title;
+        el.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <div style="flex:1; min-width:0;">
+              <div class="product-title" title="${product.title}">${titleHtml}</div>
+              <div style="font-size:12px; color:#7f8c8d;">${formatted}</div>
+            </div>
+            <div style="text-align:right; margin-left:8px;">
+              <div style="font-weight:bold; color:#27ae60;">${product.price.original}</div>
+              <button class="remove-contributor" data-id="${product.id}" style="margin-top:6px; background:#e74c3c; color:#fff; border:none; padding:6px 8px; border-radius:4px; cursor:pointer;">Remove</button>
+            </div>
+          </div>
+        `;
+
+        contributorsListEl.appendChild(el);
+      });
+
+      // Wire remove buttons
+      contributorsListEl.querySelectorAll('.remove-contributor').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = btn.getAttribute('data-id');
+          // Find the product object for undo
+          const productObj = contributors.find(p => p.id === id);
+          openConfirmModal('Remove this item from total savings?', async () => {
+            try {
+              // Temporarily remove immediately, but provide undo
+              await removeProduct(id);
+              // Refresh views
+              await renderContributors();
+              await loadSavedProducts();
+
+              // Show undo toast that restores the exact product object
+              showUndoToast('Item removed', async () => {
+                if (productObj) {
+                  try {
+                    await restoreProduct(productObj);
+                    await renderContributors();
+                    await loadSavedProducts();
+                  } catch (err) {
+                    console.error('Error restoring product via undo:', err);
+                  }
+                }
+              });
+            } catch (error) {
+              console.error('Error removing contributor:', error);
+            }
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Error rendering contributors:', error);
+      contributorsListEl.innerHTML = '<div style="color:#e74c3c; padding:12px;">Error loading contributors.</div>';
+    }
+  }
+
   // If background requested the popup to auto-run analysis, do it now and clear flag
   try {
     chrome.storage.local.get(["autoRunAnalyze"], async (data) => {
@@ -1096,8 +1329,10 @@ async function loadSavedProducts() {
         const formattedDate = `${date.toLocaleDateString()} at ${date.toLocaleTimeString()}`;
         
         // Create product HTML with price editing functionality
+        const titleHtml = product.url ? `<a href="${product.url}" target="_blank" style="color:inherit; text-decoration:none;">${product.title}</a>` : product.title;
+
         productEl.innerHTML = `
-          <div class="product-title" title="${product.title}">${product.title}</div>
+          <div class="product-title" title="${product.title}">${titleHtml}</div>
           <div class="product-price-container">
             <span class="product-price-display">${product.price.original}</span>
             <button class="edit-price-button" title="Edit Price">Edit</button>
