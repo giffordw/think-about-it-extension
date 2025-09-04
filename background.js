@@ -26,6 +26,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     sendResponse({ status: 'requested' });
   }
+  // Handle request to open the popup without auto-running analysis
+  if (message.action === 'openPopup') {
+    try {
+      if (chrome.action && chrome.action.openPopup) {
+        try {
+          chrome.action.openPopup();
+        } catch (e) {
+          console.error('Could not open popup programmatically:', e);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    sendResponse({ status: 'requested' });
+  }
   
   // Handle request to run site parser inside page context to avoid CSP issues
   if (message.action === 'runSiteParser') {

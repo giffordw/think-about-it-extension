@@ -1026,8 +1026,8 @@ function createFloatingCTA(style) {
   button.style.fontWeight = 'bold';
 
   button.onclick = () => {
-  // Request background to open the extension popup and trigger analysis
-  chrome.runtime.sendMessage({ action: "openPopupAndAnalyze" });
+    // Request background to open the extension popup (no auto-run)
+    chrome.runtime.sendMessage({ action: "openPopup" });
   };
 
   cta.appendChild(textElement);
