@@ -643,6 +643,17 @@ function isProductDetailPage() {
   // For Walmart, require either JSON-LD Product structured data or a product-like
   // URL path segment to avoid showing CTA on the homepage.
   const siteName = detectSite();
+  // Target special-case: many Target product URLs use '/p/'
+  if (siteName === 'target') {
+    try {
+      const path = window.location.pathname.toLowerCase();
+      if (path.includes('/p/') || hasJsonLdProduct()) {
+        return true;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
   if (siteName === 'walmart') {
     const url = window.location.pathname.toLowerCase();
     const productPathIndicators = ['/ip/', '/product/', '/ip-', '/item/'];
@@ -980,20 +991,25 @@ function createFloatingCTA(style) {
 
   const cta = document.createElement('div');
   cta.id = 'think-about-it-cta';
+
+  // Use cssText with important via setProperty to avoid site CSS overrides
   cta.style.position = 'fixed';
-  cta.style.bottom = '20px';
-  cta.style.right = '20px';
-  cta.style.backgroundColor = '#3498db';
-  cta.style.color = 'white';
-  cta.style.padding = '15px';
-  cta.style.borderRadius = '8px';
-  cta.style.zIndex = '10000';
-  cta.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-  cta.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
-  cta.style.fontSize = '14px';
-  cta.style.display = 'flex';
-  cta.style.alignItems = 'center';
-  cta.style.gap = '15px';
+  cta.style.setProperty('bottom', '20px', 'important');
+  cta.style.setProperty('right', '20px', 'important');
+  cta.style.setProperty('background-color', '#3498db', 'important');
+  cta.style.setProperty('color', 'white', 'important');
+  cta.style.setProperty('padding', '12px 16px', 'important');
+  cta.style.setProperty('border-radius', '8px', 'important');
+  // Use very large z-index to float above site UI
+  cta.style.setProperty('z-index', '2147483647', 'important');
+  cta.style.setProperty('box-shadow', '0 6px 14px rgba(0,0,0,0.25)', 'important');
+  cta.style.setProperty('font-family', "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", 'important');
+  cta.style.setProperty('font-size', '14px', 'important');
+  cta.style.setProperty('display', 'flex', 'important');
+  cta.style.setProperty('align-items', 'center', 'important');
+  cta.style.setProperty('gap', '12px', 'important');
+  cta.style.setProperty('max-width', 'calc(100% - 40px)', 'important');
+  cta.style.setProperty('pointer-events', 'auto', 'important');
 
   const textElement = document.createElement('span');
   textElement.id = 'cta-text';
@@ -1016,7 +1032,14 @@ function createFloatingCTA(style) {
 
   cta.appendChild(textElement);
   cta.appendChild(button);
-  document.body.appendChild(cta);
+  // Append to the top-level root element to avoid being clipped by page containers
+  try {
+    const root = document.documentElement || document.body;
+    root.appendChild(cta);
+  } catch (e) {
+    // Fallback to body if documentElement append fails
+    document.body.appendChild(cta);
+  }
 
   // Rotate the text every 20 seconds
   ctaInterval = setInterval(() => {
@@ -1121,6 +1144,29 @@ try {
     childList: true,
     subtree: true
   });
+} catch (e) {
+  // ignore
+}
+
+// Fallback URL watcher: some sites change the URL in ways that don't always trigger
+// the history/popstate hooks in all frames. Poll the URL and dispatch locationchange
+// when it changes as a last-resort detection mechanism.
+try {
+  if (typeof window.__think_last_url === 'undefined') {
+    window.__think_last_url = window.location.href;
+  }
+
+  window.__think_url_watcher = setInterval(() => {
+    try {
+      const current = window.location.href;
+      if (current !== window.__think_last_url) {
+        window.__think_last_url = current;
+        window.dispatchEvent(new Event('locationchange'));
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, 500);
 } catch (e) {
   // ignore
 }

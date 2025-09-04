@@ -8,16 +8,52 @@
  * @returns {Object} Product information object
  */
 function getProduct() {
-  return {
-    title: extractTitle(),
+  // If the URL path indicates a Target product (e.g. /p/...), prefer structured data
+  const detectedBy = isTargetProductPath() ? 'url_path' : 'dom';
+
+  return Object.assign({
+    title: extractTitle() || extractTitleFromMeta() || "",
     priceInfo: extractPrice(),
     categoryPath: extractCategoryPath(),
-    image: extractImage(),
+    image: extractImage() || extractImageFromMeta() || "",
     url: window.location.href,
     features: extractFeatures(),
     rating: extractRating(),
-    reviews: extractReviewCount()
-  };
+    reviews: extractReviewCount(),
+    detectedBy
+  });
+}
+
+/**
+ * Returns true when URL path looks like a Target product, e.g. '/p/'
+ */
+function isTargetProductPath() {
+  try {
+    const path = window.location.pathname || '';
+    return path.indexOf('/p/') === 0 || path.indexOf('/p/') > -1;
+  } catch (e) {
+    return false;
+  }
+}
+
+function extractTitleFromMeta() {
+  try {
+    const og = document.querySelector('meta[property="og:title"]')?.content;
+    if (og) return og.trim();
+    const twitter = document.querySelector('meta[name="twitter:title"]')?.content;
+    if (twitter) return twitter.trim();
+  } catch (e) {}
+  return "";
+}
+
+function extractImageFromMeta() {
+  try {
+    const og = document.querySelector('meta[property="og:image"]')?.content;
+    if (og) return og;
+    const twitter = document.querySelector('meta[name="twitter:image"]')?.content;
+    if (twitter) return twitter;
+  } catch (e) {}
+  return "";
 }
 
 /**
