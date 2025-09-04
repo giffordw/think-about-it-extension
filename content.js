@@ -622,12 +622,39 @@ function isProductDetailPage() {
     const title = extractTitle();
     if (!title) return false;
 
+    // Quick Walmart shortcut: many Walmart product pages use '/ip/' in the URL.
+    // Treat those as product pages if a title is present, even if price is dynamic.
+    try {
+      const siteNameEarly = detectSite();
+      if (siteNameEarly === 'walmart') {
+        const path = window.location.pathname.toLowerCase();
+        if (path.includes('/ip/')) return true;
+      }
+    } catch (e) {
+      // ignore
+    }
+
     // Signal 2: A price is found.
     const price = extractPrice();
     if (!price || price === "Price not found") return false;
 
-    // Signal 3: An "Add to Cart" button exists.
-    if (!hasAddToCartButton()) return false;
+  // Site-specific relaxations: some sites (e.g. Walmart) use non-standard
+  // Site-specific relaxations: some sites (e.g. Walmart) use non-standard markup.
+  // For Walmart, require either JSON-LD Product structured data or a product-like
+  // URL path segment to avoid showing CTA on the homepage.
+  const siteName = detectSite();
+  if (siteName === 'walmart') {
+    const url = window.location.pathname.toLowerCase();
+    const productPathIndicators = ['/ip/', '/product/', '/ip-', '/item/'];
+    const looksLikeProductPath = productPathIndicators.some(seg => url.includes(seg));
+    if (hasJsonLdProduct() || looksLikeProductPath) {
+      return true;
+    }
+    return false;
+  }
+
+  // For other sites, require an add-to-cart button.
+  if (!hasAddToCartButton()) return false;
 
     // Signal 4: Check for elements common on PDPs but not on search pages.
     // Presence of a product description or feature bullets is a strong positive signal.
@@ -680,6 +707,31 @@ function detectSite() {
   return null; // Not a recognized site
 }
 
+// Check if the page contains JSON-LD Product structured data
+function hasJsonLdProduct() {
+  try {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const s of scripts) {
+      if (!s.textContent) continue;
+      try {
+        const data = JSON.parse(s.textContent);
+        const arr = Array.isArray(data) ? data : [data];
+        for (const obj of arr) {
+          const t = obj['@type'] || obj['@type']?.toString?.() || '';
+          if (!t) continue;
+          if (typeof t === 'string' && t.toLowerCase().includes('product')) return true;
+          if (Array.isArray(t) && t.some(x => String(x).toLowerCase().includes('product'))) return true;
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false;
+}
+
 /**
  * Load a site-specific parser dynamically
  * @param {string} siteName The detected site name
@@ -692,24 +744,40 @@ async function loadSiteParser(siteName) {
   let parser = null;
   
   try {
-    // Try to inject the site-specific parser
-    await new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = chrome.runtime.getURL(`parsers/${siteName}.js`);
-      script.onload = () => {
-        resolve();
-      };
-      script.onerror = () => {
-        console.error(`Failed to load parser for ${siteName}`);
-        resolve();
-      };
-      document.head.appendChild(script);
+    // Ask the background script to inject and run the parser inside the page
+    // context (chrome.scripting.executeScript) to avoid CSP/unsafe-eval issues.
+    parser = await new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ action: 'runSiteParser', siteName }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error requesting background to run parser:', chrome.runtime.lastError);
+            resolve(null);
+            return;
+          }
+
+          if (!response) {
+            resolve(null);
+            return;
+          }
+
+          if (response.error) {
+            console.error('Background parser run error:', response.error);
+            resolve(null);
+            return;
+          }
+
+          // The background returns { parsedBy, data }
+          if (response.data) {
+            resolve({ getProduct: () => response.data });
+          } else {
+            resolve(null);
+          }
+        });
+      } catch (e) {
+        console.error('Exception sending runSiteParser message:', e);
+        resolve(null);
+      }
     });
-    
-    // If the script loaded successfully, window.getProduct should be available
-    if (typeof window.getProduct === 'function') {
-      parser = { getProduct: window.getProduct };
-    }
   } catch (error) {
     console.error(`Error loading parser for ${siteName}:`, error);
   }
@@ -721,20 +789,55 @@ async function loadSiteParser(siteName) {
  * Main function to scrape all product information
  * Uses site-specific parsers when available, falls back to generic extraction
  */
-function scrapeProductInfo() {
+async function scrapeProductInfo() {
   // First check if we're on a recognized site
   const siteName = detectSite();
   
   // If we have a site-specific parser available, use it
   if (siteName) {
     try {
-      // Try to execute site-specific parser directly (if already injected)
-      if (window[`${siteName}Parser`] && typeof window[`${siteName}Parser`].getProduct === 'function') {
-        const siteSpecificData = window[`${siteName}Parser`].getProduct();
+      const globalParserName = `${siteName}Parser`;
+
+      // 1) Prefer an attached window.<site>Parser if present
+      if (window[globalParserName] && typeof window[globalParserName].getProduct === 'function') {
+        const siteSpecificData = window[globalParserName].getProduct();
         console.log(`Used ${siteName} specific parser:`, siteSpecificData);
         return {
           title: siteSpecificData.title || "",
           price: siteSpecificData.priceInfo?.displayValue || "",
+          description: (siteSpecificData.description || "").substring(0, 500),
+          features: siteSpecificData.features || [],
+          image: siteSpecificData.image || "",
+          url: window.location.href,
+          siteName: extractSiteName(),
+          parsedBy: siteName
+        };
+      }
+
+      // 2) Try to dynamically inject/load the parser file and use it
+      const loadedParser = await loadSiteParser(siteName);
+      if (loadedParser && typeof loadedParser.getProduct === 'function') {
+        const siteSpecificData = loadedParser.getProduct();
+        console.log(`Used dynamically loaded ${siteName} parser:`, siteSpecificData);
+        return {
+          title: siteSpecificData.title || "",
+          price: siteSpecificData.priceInfo?.displayValue || "",
+          description: (siteSpecificData.description || "").substring(0, 500),
+          features: siteSpecificData.features || [],
+          image: siteSpecificData.image || "",
+          url: window.location.href,
+          siteName: extractSiteName(),
+          parsedBy: siteName
+        };
+      }
+
+      // 3) If the parser exposes a global getProduct function (some parser files do), use it
+      if (typeof window.getProduct === 'function') {
+        const siteSpecificData = window.getProduct();
+        console.log(`Used ${siteName} parser via global getProduct:`, siteSpecificData);
+        return {
+          title: siteSpecificData.title || "",
+          price: siteSpecificData.priceInfo?.displayValue || siteSpecificData.priceInfo || "",
           description: (siteSpecificData.description || "").substring(0, 500),
           features: siteSpecificData.features || [],
           image: siteSpecificData.image || "",
@@ -780,55 +883,68 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Check if it's a product page and show the CTA if it is
     handlePageLoad();
   } else if (message.action === "getProductInfo") {
-    // When the popup requests product info, scrape the page and send it back
-    const data = scrapeProductInfo();
-    safeContentLog("Think About It: Product data scraped");
-    sendResponse(data);
+    // When the popup requests product info, scrape the page (async) and send it back
+    (async () => {
+      try {
+        const data = await scrapeProductInfo();
+        safeContentLog("Think About It: Product data scraped");
+        sendResponse(data);
+      } catch (err) {
+        sendResponse({ error: err?.message || String(err) });
+      }
+    })();
   }
   else if (message.action === "debugParser") {
-    // Show which parser was used and the extracted info
-    const site = detectSite();
-    const data = scrapeProductInfo();
-    
-    // Create a debug overlay
-    const debugElement = document.createElement('div');
-    debugElement.style.position = 'fixed';
-    debugElement.style.top = '10px';
-    debugElement.style.right = '10px';
-    debugElement.style.padding = '10px';
-    debugElement.style.background = 'rgba(255, 255, 0, 0.9)';
-    debugElement.style.zIndex = '9999';
-    debugElement.style.fontSize = '14px';
-    debugElement.style.fontWeight = 'bold';
-    debugElement.style.border = '1px solid black';
-    debugElement.style.borderRadius = '5px';
-    debugElement.style.maxWidth = '400px';
-    debugElement.style.maxHeight = '80vh';
-    debugElement.style.overflow = 'auto';
-    debugElement.id = 'think-about-it-debug';
-    
-    // Format the debug info
-    const debugInfo = `
-      <h3>Think About It: Parser Debug</h3>
-      <p><strong>Site Detected:</strong> ${site || 'None (using generic parser)'}</p>
-      <p><strong>Parser Used:</strong> ${data.parsedBy}</p>
-      <p><strong>Title:</strong> ${data.title}</p>
-      <p><strong>Price:</strong> ${data.price}</p>
-      <hr>
-      <p><strong>Site-specific parsers available:</strong></p>
-      <p>Amazon: ${!!window.amazonParser}</p>
-      <button id="close-debug">Close</button>
-    `;
-    
-    debugElement.innerHTML = debugInfo;
-    document.body.appendChild(debugElement);
-    
-    // Add close button functionality
-    document.getElementById('close-debug').addEventListener('click', function() {
-      document.getElementById('think-about-it-debug').remove();
-    });
-    
-    sendResponse({status: "Debug info displayed"});
+    // Show which parser was used and the extracted info (async)
+    (async () => {
+      try {
+        const site = detectSite();
+        const data = await scrapeProductInfo();
+
+        // Create a debug overlay
+        const debugElement = document.createElement('div');
+        debugElement.style.position = 'fixed';
+        debugElement.style.top = '10px';
+        debugElement.style.right = '10px';
+        debugElement.style.padding = '10px';
+        debugElement.style.background = 'rgba(255, 255, 0, 0.9)';
+        debugElement.style.zIndex = '9999';
+        debugElement.style.fontSize = '14px';
+        debugElement.style.fontWeight = 'bold';
+        debugElement.style.border = '1px solid black';
+        debugElement.style.borderRadius = '5px';
+        debugElement.style.maxWidth = '400px';
+        debugElement.style.maxHeight = '80vh';
+        debugElement.style.overflow = 'auto';
+        debugElement.id = 'think-about-it-debug';
+
+        // Format the debug info
+        const debugInfo = `
+          <h3>Think About It: Parser Debug</h3>
+          <p><strong>Site Detected:</strong> ${site || 'None (using generic parser)'}</p>
+          <p><strong>Parser Used:</strong> ${data.parsedBy}</p>
+          <p><strong>Title:</strong> ${data.title}</p>
+          <p><strong>Price:</strong> ${data.price}</p>
+          <hr>
+          <p><strong>Site-specific parsers available:</strong></p>
+          <p>Amazon: ${!!window.amazonParser}</p>
+          <p>Walmart: ${!!window.walmartParser || !!window.getProduct}</p>
+          <button id="close-debug">Close</button>
+        `;
+
+        debugElement.innerHTML = debugInfo;
+        document.body.appendChild(debugElement);
+
+        // Add close button functionality
+        document.getElementById('close-debug').addEventListener('click', function() {
+          document.getElementById('think-about-it-debug').remove();
+        });
+
+        sendResponse({status: "Debug info displayed"});
+      } catch (err) {
+        sendResponse({ error: err?.message || String(err) });
+      }
+    })();
   }
   
   return true; // Indicates that sendResponse will be called asynchronously
@@ -907,6 +1023,106 @@ function createFloatingCTA(style) {
     currentLineIndex = (currentLineIndex + 1) % lines.length;
     textElement.innerText = lines[currentLineIndex];
   }, 20000);
+}
+
+// Remove the floating CTA and clear its rotation interval
+function removeCTA() {
+  try {
+    const el = document.getElementById('think-about-it-cta');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  } catch (e) {
+    // ignore
+  }
+  try {
+    if (ctaInterval) {
+      clearInterval(ctaInterval);
+      ctaInterval = null;
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+// Watch for SPA navigation / back/forward
+(function() {
+  try {
+    const _pushState = history.pushState;
+    const _replaceState = history.replaceState;
+
+    history.pushState = function() {
+      const res = _pushState.apply(this, arguments);
+      window.dispatchEvent(new Event('locationchange'));
+      return res;
+    };
+
+    history.replaceState = function() {
+      const res = _replaceState.apply(this, arguments);
+      window.dispatchEvent(new Event('locationchange'));
+      return res;
+    };
+
+    window.addEventListener('popstate', () => {
+      window.dispatchEvent(new Event('locationchange'));
+    });
+
+    window.addEventListener('locationchange', () => {
+      try {
+        // Immediately remove CTA during navigation to avoid stale UI
+        removeCTA();
+
+        // Debounced re-check after SPA page content has had a chance to load
+        if (typeof window.__think_location_change_timer !== 'undefined') {
+          clearTimeout(window.__think_location_change_timer);
+        }
+        window.__think_location_change_timer = setTimeout(() => {
+          try {
+            // Re-run detection and show CTA if this is a product page
+            handlePageLoad();
+          } catch (e) {
+            // ignore
+          }
+        }, 400);
+      } catch (e) {
+        // ignore
+      }
+    });
+  } catch (e) {
+    // ignore
+  }
+})();
+
+// Observe DOM mutations (useful for SPA content that loads after URL changes)
+try {
+  const mutationObserver = new MutationObserver((mutations) => {
+    try {
+      // Debounce heavy checks
+      if (typeof window.__think_mutation_timer !== 'undefined') {
+        clearTimeout(window.__think_mutation_timer);
+      }
+      window.__think_mutation_timer = setTimeout(() => {
+        try {
+          // If CTA already present, no need to re-run
+          if (document.getElementById('think-about-it-cta')) return;
+
+          // If page now looks like a product page, run page load handling
+          if (isProductPage()) {
+            handlePageLoad();
+          }
+        } catch (e) {
+          // ignore
+        }
+      }, 350);
+    } catch (e) {
+      // ignore
+    }
+  });
+
+  mutationObserver.observe(document.documentElement || document.body, {
+    childList: true,
+    subtree: true
+  });
+} catch (e) {
+  // ignore
 }
 
 function isProductPage() {
