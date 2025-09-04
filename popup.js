@@ -427,7 +427,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const confirmYesBtn = document.getElementById("confirm-yes");
   const confirmNoBtn = document.getElementById("confirm-no");
   const resetUsageBtn = document.getElementById("reset-usage");
-  const resetSavingsBtn = document.getElementById("reset-savings");
+  
   const productsList = document.getElementById("products-list");
   const totalSavings = document.getElementById("total-savings");
   const noProducts = document.getElementById("no-products");
@@ -550,65 +550,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     safeLog("Back button from dashboard not found");
   }
   
-  // Reset savings button for development
-  if (resetSavingsBtn) {
-    resetSavingsBtn.addEventListener("click", async (e) => {
-      try {
-        e.preventDefault();
-        
-        // Create a confirmation dialog using the DOM
-        const confirmed = confirm("Are you sure you want to reset all saved products? This cannot be undone.");
-        
-        if (confirmed) {
-          // Reset all saved products
-          await resetAllSavedProducts();
-          
-          // Reload the dashboard
-          await loadSavedProducts();
-          
-          // Show success message
-          const statusMessage = document.createElement("div");
-          statusMessage.textContent = "All saved products have been reset";
-          statusMessage.style.marginTop = "10px";
-          statusMessage.style.fontSize = "12px";
-          statusMessage.style.color = "#27ae60";
-          
-          // Find the button group and insert after it
-          const buttonGroup = resetSavingsBtn.closest(".button-group");
-          buttonGroup.parentNode.insertBefore(statusMessage, buttonGroup.nextSibling);
-          
-          // Remove the message after a delay
-          setTimeout(() => {
-            if (statusMessage.parentNode) {
-              statusMessage.parentNode.removeChild(statusMessage);
-            }
-          }, 2000);
-        }
-      } catch (error) {
-        safeLog("Error resetting savings: " + (error.message || "Unknown error"));
-        
-        // Show error message
-        const statusMessage = document.createElement("div");
-        statusMessage.textContent = "Error resetting savings. Please try again.";
-        statusMessage.style.marginTop = "10px";
-        statusMessage.style.fontSize = "12px";
-        statusMessage.style.color = "#e74c3c";
-        
-        // Find the button group and insert after it
-        const buttonGroup = resetSavingsBtn.closest(".button-group");
-        buttonGroup.parentNode.insertBefore(statusMessage, buttonGroup.nextSibling);
-        
-        // Remove the message after a delay
-        setTimeout(() => {
-          if (statusMessage.parentNode) {
-            statusMessage.parentNode.removeChild(statusMessage);
-          }
-        }, 3000);
-      }
-    });
-  } else {
-    safeLog("Reset savings button not found");
-  }
+  
   
   // Reset usage counter (for testing purposes)
   // resetUsageBtn is already defined in the DOMContentLoaded event
