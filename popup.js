@@ -741,6 +741,52 @@ document.addEventListener("DOMContentLoaded", async () => {
     safeLog("Analyze button not found - could not attach event listener");
   }
 
+  // Add the "Think About It" save-now button to save product without running analysis
+  const saveNowBtn = document.getElementById('save-now');
+  if (saveNowBtn) {
+    saveNowBtn.addEventListener('click', async (e) => {
+      try {
+        e.preventDefault();
+
+        const resultElement = document.getElementById('result');
+        resultElement.innerText = 'Saving product...';
+
+        // Get active tab
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab || !tab.id) {
+          resultElement.innerText = 'Error: No active tab found';
+          return;
+        }
+
+        // Ask content script for product info
+        const productData = await new Promise((resolve) => {
+          chrome.tabs.sendMessage(tab.id, { action: 'getProductInfo' }, (response) => {
+            if (chrome.runtime.lastError) {
+              resolve({ error: chrome.runtime.lastError.message });
+            } else {
+              resolve(response);
+            }
+          });
+        });
+
+        if (!productData || productData.error) {
+          resultElement.innerText = 'Could not get product info: ' + (productData?.error || 'unknown');
+          return;
+        }
+
+        // Save product locally without running analysis
+        await saveProduct(productData);
+        resultElement.innerHTML = '<strong>Saved for later:</strong> ' + (productData.title || 'Product');
+      } catch (err) {
+        console.error('Error saving product via Save Now:', err);
+        const resultElement = document.getElementById('result');
+        resultElement.innerText = 'Error saving product: ' + (err.message || String(err));
+      }
+    });
+  } else {
+    safeLog('Save Now button not found - skipping save-now wiring');
+  }
+
   // If background requested the popup to auto-run analysis, do it now and clear flag
   try {
     chrome.storage.local.get(["autoRunAnalyze"], async (data) => {
