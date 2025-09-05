@@ -1149,14 +1149,9 @@ async function handleAnalyze() {
       return;
     }
     
-    // Save the product data for tracking
-    try {
-      await saveProduct(productData);
-      console.log("Product saved for tracking:", productData.title);
-    } catch (error) {
-      console.error("Error saving product data:", error);
-      // Continue with analysis even if saving fails
-    }
+  // NOTE: Do NOT auto-save the product during analysis.
+  // The product should only be saved when the user explicitly clicks the "Think About It" / Save Now button.
+  // Previously we called saveProduct(productData) here, but that caused analysis to add items automatically.
     
     // Get the user's ID
     const userId = await getUserId();

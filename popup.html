@@ -38,6 +38,23 @@
     #analyze:hover, #save-settings:hover, #back-to-main:hover {
       background-color: #2980b9;
     }
+    /* Green primary button for saving (Think About It) */
+    #save-now {
+      background-color: #2ecc71;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      transition: background-color 0.3s;
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    #save-now:hover {
+      background-color: #27ae60;
+    }
     .button-group {
       display: flex;
       justify-content: space-between;
@@ -235,9 +252,9 @@
 <body>
   <h1>Think About It</h1>
   <div id="main-interface">
-    <div style="display:flex; gap:8px;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <button id="save-now">Think About It</button>
       <button id="analyze">Should I buy this?</button>
-      <button id="save-now" style="background-color:#2ecc71;">Think About It</button>
     </div>
     <div id="result"></div>
     <div class="footer">
