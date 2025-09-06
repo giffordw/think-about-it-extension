@@ -250,9 +250,22 @@
   </style>
 </head>
 <body>
-  <h1>Think About It</h1>
+  <!-- Top header bar: title, total saved, settings gear -->
+  <div id="top-bar" role="banner" style="position:sticky; top:0; z-index:999;">
+    <div style="background:#ffffff; border-bottom:1px solid #e6e9ee; padding:12px 14px; display:flex; align-items:center; gap:12px; height:52px;">
+      <div class="top-title" style="flex:1; min-width:0; font-size:16px; font-weight:600; color:#2c3e50; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Think About It</div>
+  <a id="header-savings" href="#" style="font-size:16px; font-weight:500; color:#27ae60; text-align:center; text-decoration:none;" aria-live="polite">Total Saved: $0.00</a>
+      <button id="settings-gear" aria-label="Open settings" title="Settings" style="background:transparent; border:none; padding:6px; margin-left:8px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; border-radius:6px;" >
+        <!-- Inline SVG gear -->
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M19.4 13.5a7.9 7.9 0 0 0 0-3l2-1.2-2-3.4-2.3.7a7.9 7.9 0 0 0-2.6-1.5L14 1h-4l-.5 3.1a7.9 7.9 0 0 0-2.6 1.5l-2.3-.7-2 3.4 2 1.2a7.9 7.9 0 0 0 0 3l-2 1.2 2 3.4 2.3-.7a7.9 7.9 0 0 0 2.6 1.5L10 23h4l.5-3.1a7.9 7.9 0 0 0 2.6-1.5l2.3.7 2-3.4-2-1.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
   <div id="main-interface">
-    <div style="display: flex; flex-direction: column; gap: 8px;">
+    <div style="display: flex; flex-direction: column; gap: 8px; margin-top:8px;">
       <button id="save-now">Think About It</button>
       <button id="analyze">Should I buy this?</button>
     </div>

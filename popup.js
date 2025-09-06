@@ -440,6 +440,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Silent fail if console logging causes issues
     }
   }
+
+  // Update the top-bar savings display
+  async function updateHeaderSavings() {
+    try {
+      const headerEl = document.getElementById('header-savings');
+      if (!headerEl) return;
+      const total = await calculateSavings();
+      headerEl.textContent = `Total Saved: $${total.toFixed(2)}`;
+    } catch (e) {
+      console.error('Error updating header savings:', e);
+    }
+  }
   
   // Log which elements were found/not found
   safeLog("UI elements initialization status:");
@@ -727,6 +739,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Save product locally without running analysis
         await saveProduct(productData);
         resultElement.innerHTML = '<strong>Saved for later:</strong> ' + (productData.title || 'Product');
+        // Refresh dashboard if visible (do NOT update header total here — header only reflects "saved" items)
+        if (document.getElementById('dashboard-interface').style.display !== 'none') {
+          await loadSavedProducts();
+        }
       } catch (err) {
         console.error('Error saving product via Save Now:', err);
         const resultElement = document.getElementById('result');
@@ -755,11 +771,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     });
 
-    contributorsBackBtn.addEventListener('click', (e) => {
+    contributorsBackBtn.addEventListener('click', async (e) => {
       try {
         e.preventDefault();
+        // Hide contributors and show dashboard
         contributorsInterface.style.display = 'none';
         dashboardInterface.style.display = 'block';
+
+        // Reload the dashboard contents and header to ensure items appear
+        await loadSavedProducts();
+        await updateHeaderSavings();
       } catch (error) {
         console.error('Error returning from contributors view:', error);
       }
@@ -991,7 +1012,74 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (e) {
     console.error('Exception checking autoRunAnalyze flag:', e);
   }
-  
+
+  // Wire settings gear button to open settings
+  const settingsGear = document.getElementById('settings-gear');
+  if (settingsGear) {
+    settingsGear.addEventListener('click', (e) => {
+      try {
+        e.preventDefault();
+        // Open settings view inside popup, hide others
+        mainInterface.style.display = 'none';
+        dashboardInterface.style.display = 'none';
+        contributorsInterface.style.display = 'none';
+        settingsInterface.style.display = 'block';
+      } catch (err) {
+        console.error('Error opening settings from gear:', err);
+      }
+    });
+  }
+
+  // Wire header savings link to open contributors view
+  const headerSavingsLink = document.getElementById('header-savings');
+  if (headerSavingsLink) {
+    headerSavingsLink.addEventListener('click', async (e) => {
+      try {
+        e.preventDefault();
+        console.log('Header savings link clicked!');
+        // Hide other views
+        mainInterface.style.display = 'none';
+        dashboardInterface.style.display = 'none';
+        settingsInterface.style.display = 'none';
+        // Show contributors view
+        contributorsInterface.style.display = 'block';
+        await renderContributors();
+      } catch (err) {
+        console.error('Error opening contributors from header:', err);
+      }
+    });
+  } else {
+    console.error('CRITICAL: #header-savings link not found on init.');
+  }
+
+  // Ensure header savings reflect current storage on load
+  await updateHeaderSavings();
+
+  // Listen for storage changes to update header savings and dashboard
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (changes.savedProducts) {
+      try {
+        const oldList = changes.savedProducts.oldValue || [];
+        const newList = changes.savedProducts.newValue || [];
+
+        const oldSavedCount = (oldList.filter(p => p && p.status === 'saved')).length;
+        const newSavedCount = (newList.filter(p => p && p.status === 'saved')).length;
+
+        // Only update the header if the number of saved items changed
+        if (oldSavedCount !== newSavedCount) {
+          updateHeaderSavings().catch(console.error);
+        }
+
+        // Always refresh the dashboard view if it's visible so thinking items show up
+        if (document.getElementById('dashboard-interface').style.display !== 'none') {
+          loadSavedProducts().catch(console.error);
+        }
+      } catch (e) {
+        console.error('Error handling storage.onChanged:', e);
+      }
+    }
+  });
+
   // Add debug button functionality
   if (debugLink) {
     debugLink.addEventListener("click", async (e) => {
@@ -1238,17 +1326,18 @@ async function loadSavedProducts() {
     // Check if there are any products
     if (products.length === 0) {
       noProducts.style.display = "block";
-      totalSavingsEl.style.display = "none";
+      // Keep the dashboard-local total hidden; the header displays the total
+      if (totalSavingsEl) totalSavingsEl.style.display = "none";
       return;
     }
     
     // Hide no products message and show total savings
     noProducts.style.display = "none";
     
-    // Calculate and display total savings
-    const totalSavings = await calculateSavings();
-    totalSavingsEl.style.display = "block";
-    totalSavingsEl.textContent = `Total Savings: $${totalSavings.toFixed(2)}`;
+    // Do not display a duplicated total on the dashboard; header shows the total saved
+    if (totalSavingsEl) {
+      totalSavingsEl.style.display = "none";
+    }
     
     // Sort products by timestamp, newest first
     const sortedProducts = [...products].sort((a, b) => 
