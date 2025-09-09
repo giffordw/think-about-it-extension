@@ -55,65 +55,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // First inject the parser JS into the tab
     const parserPath = `parsers/${siteName}.js`;
-
-    chrome.scripting.executeScript({
-      target: { tabId },
-      files: [parserPath]
-    }, (injectionResults) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error injecting parser:', chrome.runtime.lastError);
-        sendResponse({ error: chrome.runtime.lastError.message });
-        return;
-      }
-
-      // After injection, run a small script in the page to call getProduct()
+    // In Manifest V3 service workers the recommended pattern is to return a Promise
+    // from the onMessage listener so the worker stays alive until the async work
+    // completes. Wrap the callback-based scripting APIs in Promises and resolve
+    // with the final response object.
+    return new Promise((resolve) => {
       chrome.scripting.executeScript({
         target: { tabId },
-        func: () => {
-          try {
-            // Prefer named parser object if present
-            if (window.walmartParser && typeof window.walmartParser.getProduct === 'function') {
-              return { parsedBy: 'walmart', data: window.walmartParser.getProduct() };
-            }
-
-            // Some parser files export a getProduct function globally
-            if (typeof window.getProduct === 'function') {
-              // Try to infer parsedBy from hostname
-              const hostname = window.location.hostname.toLowerCase();
-              const site = hostname.includes('walmart') ? 'walmart' : (hostname.includes('amazon') ? 'amazon' : 'site');
-              return { parsedBy: site, data: window.getProduct() };
-            }
-
-            return { parsedBy: 'unknown', data: null };
-          } catch (e) {
-            return { error: e?.message || String(e) };
-          }
-        }
-      }, (results) => {
+        files: [parserPath]
+      }, (injectionResults) => {
         if (chrome.runtime.lastError) {
-          console.error('Error running parser function:', chrome.runtime.lastError);
-          sendResponse({ error: chrome.runtime.lastError.message });
+          console.error('Error injecting parser:', chrome.runtime.lastError);
+          resolve({ error: chrome.runtime.lastError.message });
           return;
         }
 
-        if (!results || !results[0] || !results[0].result) {
-          sendResponse({ error: 'No result from parser execution' });
-          return;
-        }
+        // After injection, run a small script in the page to call getProduct()
+        chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            try {
+              // Prefer named parser object if present
+              if (window.walmartParser && typeof window.walmartParser.getProduct === 'function') {
+                return { parsedBy: 'walmart', data: window.walmartParser.getProduct() };
+              }
 
-        const res = results[0].result;
-        if (res.error) {
-          sendResponse({ error: res.error });
-        } else {
-          sendResponse({ parsedBy: res.parsedBy || siteName, data: res.data });
-        }
+              // Some parser files export a getProduct function globally
+              if (typeof window.getProduct === 'function') {
+                // Try to infer parsedBy from hostname
+                const hostname = window.location.hostname.toLowerCase();
+                const site = hostname.includes('walmart') ? 'walmart' : (hostname.includes('amazon') ? 'amazon' : 'site');
+                return { parsedBy: site, data: window.getProduct() };
+              }
+
+              return { parsedBy: 'unknown', data: null };
+            } catch (e) {
+              return { error: e?.message || String(e) };
+            }
+          }
+        }, (results) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error running parser function:', chrome.runtime.lastError);
+            resolve({ error: chrome.runtime.lastError.message });
+            return;
+          }
+
+          if (!results || !results[0] || !results[0].result) {
+            resolve({ error: 'No result from parser execution' });
+            return;
+          }
+
+          const res = results[0].result;
+          if (res.error) {
+            resolve({ error: res.error });
+          } else {
+            resolve({ parsedBy: res.parsedBy || siteName, data: res.data });
+          }
+        });
       });
     });
-
-    // Indicate we'll call sendResponse asynchronously
-    return true;
   }
-  return true;
+  // Only return true from inside branches that call sendResponse asynchronously.
 });
 
 // Listener for tab updates to inject content script

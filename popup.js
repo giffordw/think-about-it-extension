@@ -1464,22 +1464,50 @@ async function loadSavedProducts() {
   }
 }
 
-// Enhanced debugging for chrome.storage.sync.get
-function handleResponseStyle(result) {
+// Retrieve responseStyle and ensure header is updated accordingly
+function handleResponseStyleCallback(result) {
   try {
     if (chrome.runtime.lastError) {
       console.error("Error retrieving responseStyle:", chrome.runtime.lastError.message);
-      resolve("witty"); // Default to "witty" in case of error
-    } else {
-      console.log("responseStyle retrieved successfully:", result.responseStyle);
-      resolve(result.responseStyle || "witty");
+      // Nothing to resolve here; default handling elsewhere
+      return;
+    }
+
+    console.log("responseStyle retrieved successfully:", result && result.responseStyle);
+    // Ensure header reflects current savings (this is independent of responseStyle)
+    // updateHeaderSavings is declared inside the DOMContentLoaded handler, so it may not
+    // be available at this point. Guard the call and, if missing, schedule it once the
+    // DOM is ready.
+    try {
+      if (typeof updateHeaderSavings === 'function') {
+        // Call it and handle promise rejections
+        const res = updateHeaderSavings();
+        if (res && typeof res.catch === 'function') res.catch(console.error);
+      } else {
+        // Defer until DOMContentLoaded where updateHeaderSavings is defined
+        document.addEventListener('DOMContentLoaded', () => {
+          try {
+            if (typeof updateHeaderSavings === 'function') {
+              const r = updateHeaderSavings();
+              if (r && typeof r.catch === 'function') r.catch(console.error);
+            }
+          } catch (e) {
+            console.error('Deferred updateHeaderSavings call failed:', e);
+          }
+        }, { once: true });
+      }
+    } catch (e) {
+      console.error('Error invoking updateHeaderSavings:', e);
     }
   } catch (error) {
-    console.error("Unexpected error in handleResponseStyle:", error);
-    resolve("witty");
+    console.error("Unexpected error in handleResponseStyleCallback:", error);
   }
 }
 
-// Log the context before making the call
-console.log("Executing chrome.storage.sync.get for responseStyle");
-chrome.storage.sync.get(["responseStyle"], handleResponseStyle);
+// Request current responseStyle (used to seed content script CTA style) and update header
+try {
+  console.log("Executing chrome.storage.sync.get for responseStyle");
+  chrome.storage.sync.get(["responseStyle"], handleResponseStyleCallback);
+} catch (e) {
+  console.error('Error requesting responseStyle:', e);
+}

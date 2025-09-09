@@ -1,7 +1,10 @@
-/**
- * Debug function to verify content script loading
- */
-function debugContentScript() {
+if (!window.__think_about_it_content_loaded) {
+  window.__think_about_it_content_loaded = true;
+
+  /**
+   * Debug function to verify content script loading
+   */
+  function debugContentScript() {
   safeContentLog("Think About It: Content script debug check");
   
   // Add a visible element to the page for debugging
@@ -22,10 +25,30 @@ function debugContentScript() {
     const el = document.getElementById('think-about-it-debug');
     if (el) el.remove();
   }, 5000);
-}
+  }
 
-// Call this function when the script loads
-debugContentScript();
+  // Call this function when the script loads
+  debugContentScript();
+
+  // ...rest of file continues inside this guard...
+
+  /**
+   * Helper to safely return trimmed inner text of an element.
+   * Falls back to textContent and returns an empty string on any error.
+   */
+  function safeInnerText(element) {
+    try {
+      if (!element) return '';
+      const txt = (element.innerText !== undefined && element.innerText !== null)
+        ? element.innerText
+        : (element.textContent !== undefined && element.textContent !== null)
+          ? element.textContent
+          : '';
+      return String(txt).trim();
+    } catch (e) {
+      return '';
+    }
+  }
 
 /**
  * Try to identify the main product container
@@ -135,9 +158,8 @@ function extractTitle() {
   // Try each selector
   for (const selector of titleSelectors) {
     const element = document.querySelector(selector);
-    if (element && element.innerText.trim()) {
-      return element.innerText.trim();
-    }
+  const t = safeInnerText(element);
+  if (t) return t;
   }
 
   // Fallback to document title (often contains the product name)
@@ -196,7 +218,7 @@ function extractPrice() {
         // Skip if in a recommendation area
         if (isLikelyRecommendation(element)) continue;
         
-        const text = element.innerText.trim();
+        const text = safeInnerText(element);
         if (text && isPriceFormat(text)) {
           priceText = cleanPriceText(text);
           // If it looks like a main price (not "was" price), return it
@@ -221,7 +243,7 @@ function extractPrice() {
       // Skip if in a recommendation area
       if (isLikelyRecommendation(element)) continue;
       
-      const text = element.innerText.trim();
+      const text = safeInnerText(element);
       if (text && isPriceFormat(text)) {
         priceText = cleanPriceText(text);
         // If it looks like a main price (not "was" price), return it
@@ -256,8 +278,8 @@ function isSecondaryPrice(element) {
   if (!element) return false;
   
   // Check the element and its adjacent text for secondary price indicators
-  const elementText = element.innerText.toLowerCase();
-  const parentText = element.parentElement ? element.parentElement.innerText.toLowerCase() : '';
+  const elementText = safeInnerText(element).toLowerCase();
+  const parentText = element.parentElement ? safeInnerText(element.parentElement).toLowerCase() : '';
   
   const secondaryIndicators = ['was', 'original', 'regular', 'list', 'msrp', 'rrp', 'retail', 'before', 'old'];
   
@@ -481,7 +503,7 @@ function extractFeatures() {
       const elements = mainContainer.querySelectorAll(selector);
       if (elements && elements.length > 0) {
         elements.forEach(el => {
-          const text = el.innerText.trim();
+          const text = safeInnerText(el);
           if (text) features.push(text);
         });
         
@@ -497,7 +519,7 @@ function extractFeatures() {
     const elements = document.querySelectorAll(selector);
     if (elements && elements.length > 0) {
       elements.forEach(el => {
-        const text = el.innerText.trim();
+        const text = safeInnerText(el);
         if (text && !isLikelyRecommendation(el)) {
           features.push(text);
         }
@@ -889,12 +911,19 @@ function safeContentLog(message) {
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   safeContentLog("Think About It: Message received in content script");
-  
+
+  // Only return true when we actually will call sendResponse asynchronously.
+  // Some message actions (like checkForProduct) are fire-and-forget and must not
+  // cause the listener to signal an async response, otherwise Chrome may warn
+  // that the channel closed before a response was received.
+  let willRespond = false;
+
   if (message.action === "checkForProduct") {
     // Check if it's a product page and show the CTA if it is
     handlePageLoad();
   } else if (message.action === "getProductInfo") {
     // When the popup requests product info, scrape the page (async) and send it back
+    willRespond = true;
     (async () => {
       try {
         const data = await scrapeProductInfo();
@@ -907,6 +936,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   else if (message.action === "debugParser") {
     // Show which parser was used and the extracted info (async)
+    willRespond = true;
     (async () => {
       try {
         const site = detectSite();
@@ -957,8 +987,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
   }
-  
-  return true; // Indicates that sendResponse will be called asynchronously
+
+  return willRespond; // only true if sendResponse will be called asynchronously
 });
 
 /**
@@ -1341,3 +1371,5 @@ function debugPriceExtraction() {
   
   return finalPrice;
 }
+
+} // End of content script guard: window.__think_about_it_content_loaded
