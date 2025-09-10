@@ -782,25 +782,51 @@ async function loadSiteParser(siteName) {
     parser = await new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ action: 'runSiteParser', siteName }, (response) => {
+          // Log both chrome.runtime.lastError and the response object for visibility
           if (chrome.runtime.lastError) {
-            console.error('Error requesting background to run parser:', chrome.runtime.lastError);
+            // This specific message often occurs when the background service worker
+            // finishes or the message channel closes before a response is delivered.
+            // It's expected in cases where we then fall back to content-side injection.
+            const errMsg = chrome.runtime.lastError && chrome.runtime.lastError.message ? chrome.runtime.lastError.message : String(chrome.runtime.lastError);
+            if (errMsg && errMsg.includes('The message port closed before a response was received')) {
+              // Non-fatal and expected: lower noise
+              console.debug('Background parser request closed early (expected in some cases):', errMsg);
+            } else {
+              try {
+                console.error('Error requesting background to run parser: chrome.runtime.lastError =', JSON.stringify(chrome.runtime.lastError));
+              } catch (e) {
+                console.error('Error requesting background to run parser: chrome.runtime.lastError (non-serializable):', chrome.runtime.lastError);
+              }
+            }
             resolve(null);
             return;
           }
 
+          try {
+            console.log('runSiteParser response object:', JSON.stringify(response));
+          } catch (e) {
+            console.log('runSiteParser response object (non-serializable):', response);
+          }
+
           if (!response) {
+            console.warn('runSiteParser returned no response');
             resolve(null);
             return;
           }
 
           if (response.error) {
-            console.error('Background parser run error:', response.error);
+            console.error('Background parser run error (response.error):', response.error);
             resolve(null);
             return;
           }
 
           // The background returns { parsedBy, data }
           if (response.data) {
+            try {
+              console.log('Background parser returned parsedBy:', response.parsedBy, 'preview:', { title: response.data.title, price: response.data.price || response.data.priceInfo });
+            } catch (e) {
+              // ignore
+            }
             resolve({ getProduct: () => response.data });
           } else {
             resolve(null);
@@ -815,6 +841,47 @@ async function loadSiteParser(siteName) {
     console.error(`Error loading parser for ${siteName}:`, error);
   }
   
+  // If background injection failed, try a content-script injection fallback.
+  if (!parser) {
+    try {
+      console.debug(`Background parser load failed for ${siteName}, attempting content-side injection fallback`);
+      const parserUrl = chrome.runtime.getURL(`parsers/${siteName}.js`);
+
+      // Avoid injecting the same script twice
+      if (!document.querySelector(`script[src="${parserUrl}"]`)) {
+        const script = document.createElement('script');
+        script.src = parserUrl;
+        script.async = false;
+        document.documentElement.appendChild(script);
+      }
+
+      // Wait for a global parser to appear or for window.getProduct
+      const globalParserName = `${siteName}Parser`;
+      const start = Date.now();
+      const waitMs = 5000;
+      while (Date.now() - start < waitMs) {
+        if (window[globalParserName] && typeof window[globalParserName].getProduct === 'function') {
+          parser = { getProduct: () => window[globalParserName].getProduct() };
+          console.log('Content-side parser injection succeeded for', siteName);
+          break;
+        }
+        if (typeof window.getProduct === 'function') {
+          parser = { getProduct: () => window.getProduct() };
+          console.log('Content-side found global getProduct for', siteName);
+          break;
+        }
+        // small sleep
+        await new Promise(r => setTimeout(r, 150));
+      }
+
+      if (!parser) {
+        console.debug(`Content-side parser injection timed out for ${siteName}`);
+      }
+    } catch (e) {
+      console.debug('Content-side parser injection error:', e);
+    }
+  }
+
   return parser;
 }
 

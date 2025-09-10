@@ -48,6 +48,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Sender should be the content script; get its tab id
     const tabId = sender?.tab?.id;
 
+  console.log('runSiteParser request received for site:', siteName, 'from sender:', sender && { id: sender.id, url: sender.url, tab: sender.tab && sender.tab.id });
+
     if (!tabId) {
       sendResponse({ error: 'No tab id available' });
       return;
@@ -60,18 +62,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // completes. Wrap the callback-based scripting APIs in Promises and resolve
     // with the final response object.
     return new Promise((resolve) => {
+      let settled = false;
+      // Timeout guard to avoid hanging the message channel indefinitely
+      const timeoutMs = 10000; // 10s
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          console.debug(`runSiteParser timed out after ${timeoutMs}ms for site:`, siteName);
+          resolve({ error: `runSiteParser timed out after ${timeoutMs}ms` });
+        }
+      }, timeoutMs);
+
+      function finish(result) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(result);
+      }
+
       chrome.scripting.executeScript({
         target: { tabId },
         files: [parserPath]
       }, (injectionResults) => {
         if (chrome.runtime.lastError) {
-          console.error('Error injecting parser:', chrome.runtime.lastError);
-          resolve({ error: chrome.runtime.lastError.message });
+          console.debug('scripting.executeScript (inject) lastError:', chrome.runtime.lastError && chrome.runtime.lastError.message ? chrome.runtime.lastError.message : chrome.runtime.lastError);
+        } else {
+          console.log('scripting.executeScript (inject) succeeded, results count:', injectionResults && injectionResults.length);
+        }
+        if (chrome.runtime.lastError) {
+          console.debug('Error injecting parser (non-fatal):', chrome.runtime.lastError);
+          finish({ error: chrome.runtime.lastError && chrome.runtime.lastError.message ? chrome.runtime.lastError.message : String(chrome.runtime.lastError) });
           return;
         }
 
         // After injection, run a small script in the page to call getProduct()
-        chrome.scripting.executeScript({
+  chrome.scripting.executeScript({
           target: { tabId },
           func: () => {
             try {
@@ -95,21 +120,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }, (results) => {
           if (chrome.runtime.lastError) {
-            console.error('Error running parser function:', chrome.runtime.lastError);
-            resolve({ error: chrome.runtime.lastError.message });
+            console.debug('scripting.executeScript (func) lastError:', chrome.runtime.lastError && chrome.runtime.lastError.message ? chrome.runtime.lastError.message : chrome.runtime.lastError);
+          } else {
+            console.log('scripting.executeScript (func) succeeded, results count:', results && results.length);
+          }
+          if (chrome.runtime.lastError) {
+            console.debug('Error running parser function (non-fatal):', chrome.runtime.lastError);
+            finish({ error: chrome.runtime.lastError && chrome.runtime.lastError.message ? chrome.runtime.lastError.message : String(chrome.runtime.lastError) });
             return;
           }
 
           if (!results || !results[0] || !results[0].result) {
-            resolve({ error: 'No result from parser execution' });
+            finish({ error: 'No result from parser execution' });
             return;
           }
 
           const res = results[0].result;
           if (res.error) {
-            resolve({ error: res.error });
+            finish({ error: res.error });
           } else {
-            resolve({ parsedBy: res.parsedBy || siteName, data: res.data });
+            finish({ parsedBy: res.parsedBy || siteName, data: res.data });
           }
         });
       });

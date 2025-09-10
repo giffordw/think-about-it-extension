@@ -55,6 +55,30 @@ function extractPrice() {
     '.price'
   ];
 
+  // 2a) Walmart sometimes splits the price into integer + mantissa elements
+  // (.price-characteristic and .price-mantissa). Handle that explicitly first.
+  try {
+    const charEl = document.querySelector('.price-characteristic');
+    if (charEl) {
+      const mantEl = document.querySelector('.price-mantissa');
+      const intPart = (charEl.getAttribute('content') || charEl.textContent || '').trim();
+      const decPart = (mantEl && (mantEl.getAttribute('content') || mantEl.textContent)) ? (mantEl.getAttribute('content') || mantEl.textContent).trim() : '00';
+      if (intPart) {
+        const combined = `${intPart}.${decPart.replace(/[^0-9]/g, '').padEnd(2, '0').slice(0,2)}`;
+        const value = safeParseFloat(combined);
+        if (value) {
+          return {
+            value,
+            displayValue: formatDisplay('$', value),
+            currency: '$'
+          };
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
   let nodes = [];
   for (const sel of candidates) {
     document.querySelectorAll(sel).forEach(el => {
