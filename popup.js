@@ -338,7 +338,7 @@ async function resetAllSavedProducts() {
 
 // Function to check if user has reached the monthly usage limit
 async function hasReachedUsageLimit() {
-  const MONTHLY_LIMIT = 5; // Set your desired limit here
+  const MONTHLY_LIMIT = 60; // Set your desired limit here
   const currentCount = await getMonthlyUsageCount();
   return currentCount >= MONTHLY_LIMIT;
 }
@@ -431,6 +431,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   const productsList = document.getElementById("products-list");
   const totalSavings = document.getElementById("total-savings");
   const noProducts = document.getElementById("no-products");
+
+  // Determine dev mode: prefer window flag (quick toggle), fallback to chrome.storage.local
+  let IS_DEV = Boolean(window && window.__THINK_DEV);
+  try {
+    // Attempt to read persisted dev flag; if present and true, enable dev mode
+    chrome.storage.local.get(['__THINK_DEV'], (res) => {
+      try {
+        if (res && res.__THINK_DEV) {
+          IS_DEV = true;
+        }
+        // Hide debug elements by default when not in dev
+        if (!IS_DEV) {
+          try { if (debugLink) debugLink.style.display = 'none'; } catch(e){}
+          try { if (resetUsageBtn) resetUsageBtn.style.display = 'none'; } catch(e){}
+        }
+      } catch (e) {
+        // ignore
+      }
+    });
+  } catch (e) {
+    // chrome.storage may not be available in some test contexts; rely on window flag
+    if (!IS_DEV) {
+      try { if (debugLink) debugLink.style.display = 'none'; } catch(e){}
+      try { if (resetUsageBtn) resetUsageBtn.style.display = 'none'; } catch(e){}
+    }
+  }
   
   // Create a debug log div to avoid console issues
   function safeLog(message) {
@@ -564,68 +590,72 @@ document.addEventListener("DOMContentLoaded", async () => {
   
   
   
-  // Reset usage counter (for testing purposes)
-  // resetUsageBtn is already defined in the DOMContentLoaded event
+  // Reset usage counter (for testing purposes) - only active in dev mode
   if (resetUsageBtn) {
-    safeLog("Reset usage button found - attaching event listener");
-    
-    resetUsageBtn.addEventListener("click", async (e) => {
-      e.preventDefault(); // Prevent any default action
-      safeLog("Reset usage button clicked");
-      
-      // First display processing state
-      const messageElement = document.getElementById("settings-message");
-      if (messageElement) {
-        messageElement.innerText = "Resetting usage count...";
-      }
-      
-      try {
-        // Reset the usage count
-        await resetUsageCount();
-        safeLog("Usage count reset successful");
+    if (!IS_DEV) {
+      // hide in prod
+      try { resetUsageBtn.style.display = 'none'; } catch (e) {}
+      safeLog("Reset usage button hidden (not in dev)");
+    } else {
+      safeLog("Reset usage button found - attaching event listener (dev mode)");
+      resetUsageBtn.addEventListener("click", async (e) => {
+        e.preventDefault(); // Prevent any default action
+        safeLog("Reset usage button clicked");
         
-        // Update UI elements
+        // First display processing state
+        const messageElement = document.getElementById("settings-message");
         if (messageElement) {
-          messageElement.innerText = "Monthly usage count reset to 0";
-          
-          // Update the displayed usage stats
-          const usageStatsElement = document.getElementById("usage-stats");
-          if (usageStatsElement) {
-            usageStatsElement.textContent = "Usage this month: 0/5 analyses";
-          }
-          
-          // Clear the message after a delay
-          setTimeout(() => {
-            if (messageElement) {
-              messageElement.innerText = "";
-            }
-          }, 2000);
+          messageElement.innerText = "Resetting usage count...";
         }
-      } catch (error) {
+        
         try {
-          console.error("Error resetting usage count:", error);
-        } catch (e) {
-          // Silently fail if console logging causes issues
-        }
-        
-        // Show error message
-        if (messageElement) {
-          // Check for specific error types
-          if (error && error.message && error.message.includes("could not establish connection")) {
-            messageElement.innerHTML = "Error: Could not establish connection.<br>This is likely a temporary issue.";
-          } else {
-            messageElement.innerText = "Error resetting usage count. Please try again.";
+          // Reset the usage count
+          await resetUsageCount();
+          safeLog("Usage count reset successful");
+          
+          // Update UI elements
+          if (messageElement) {
+            messageElement.innerText = "Monthly usage count reset to 0";
+            
+            // Update the displayed usage stats
+            const usageStatsElement = document.getElementById("usage-stats");
+            if (usageStatsElement) {
+              usageStatsElement.textContent = "Usage this month: 0/5 analyses";
+            }
+            
+            // Clear the message after a delay
+            setTimeout(() => {
+              if (messageElement) {
+                messageElement.innerText = "";
+              }
+            }, 2000);
+          }
+        } catch (error) {
+          try {
+            console.error("Error resetting usage count:", error);
+          } catch (e) {
+            // Silently fail if console logging causes issues
           }
           
-          // Clear the message after a delay
-          setTimeout(() => {
-            if (messageElement) {
-              messageElement.innerText = "";
+          // Show error message
+          if (messageElement) {
+            // Check for specific error types
+            if (error && error.message && error.message.includes("could not establish connection")) {
+              messageElement.innerHTML = "Error: Could not establish connection.<br>This is likely a temporary issue.";
+            } else {
+              messageElement.innerText = "Error resetting usage count. Please try again.";
             }
-          }, 3000);
+            
+            // Clear the message after a delay
+            setTimeout(() => {
+              if (messageElement) {
+                messageElement.innerText = "";
+              }
+            }, 3000);
+          }
         }
-      }
-    });
+      });
+    }
   } else {
     safeLog("Reset usage button not found - could not attach event listener");
     
@@ -1082,51 +1112,55 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Add debug button functionality
   if (debugLink) {
-    debugLink.addEventListener("click", async (e) => {
-      e.preventDefault();
-      
-      // Get the active tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
-      if (!tab || !tab.id) {
-        console.error("No active tab found");
-        return;
-      }
-      
-      // Check if we're on a page where content scripts can run
-      if (tab.url.startsWith("chrome://") || 
-          tab.url.startsWith("edge://") || 
-          tab.url.startsWith("about:") ||
-          tab.url.startsWith("chrome-extension://")) {
-        alert("This debug feature cannot be used on browser pages. Please navigate to a regular website.");
-        return;
-      }
-      
-      // Inject content script and send debug message
-      try {
-        // Inject the content script
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          files: ['content.js']
-        });
+    if (!IS_DEV) {
+      try { debugLink.style.display = 'none'; } catch (e) {}
+    } else {
+      debugLink.addEventListener("click", async (e) => {
+        e.preventDefault();
         
-        // Wait for the content script to initialize
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Get the active tab
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         
-        // Send debug message
-        chrome.tabs.sendMessage(tab.id, { action: "debugParser" }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.error("Error sending debug message:", chrome.runtime.lastError.message);
-          } else {
-            console.log("Debug response:", response);
-            alert("Debug information sent to console. Check the console for details.");
-          }
-        });
-      } catch (error) {
-        console.error("Error in debug functionality:", error);
-        alert("Error initializing debug feature. Please try again.");
-      }
-    });
+        if (!tab || !tab.id) {
+          console.error("No active tab found");
+          return;
+        }
+        
+        // Check if we're on a page where content scripts can run
+        if (tab.url.startsWith("chrome://") || 
+            tab.url.startsWith("edge://") || 
+            tab.url.startsWith("about:") ||
+            tab.url.startsWith("chrome-extension://")) {
+          alert("This debug feature cannot be used on browser pages. Please navigate to a regular website.");
+          return;
+        }
+        
+        // Inject content script and send debug message
+        try {
+          // Inject the content script
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content.js']
+          });
+          
+          // Wait for the content script to initialize
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Send debug message
+          chrome.tabs.sendMessage(tab.id, { action: "debugParser" }, (response) => {
+            if (chrome.runtime.lastError) {
+              console.error("Error sending debug message:", chrome.runtime.lastError.message);
+            } else {
+              console.log("Debug response:", response);
+              alert("Debug information sent to console. Check the console for details.");
+            }
+          });
+        } catch (error) {
+          console.error("Error in debug functionality:", error);
+          alert("Error initializing debug feature. Please try again.");
+        }
+      });
+    }
   }
 });
 

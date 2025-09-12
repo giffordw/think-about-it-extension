@@ -1,6 +1,10 @@
 if (!window.__think_about_it_content_loaded) {
   window.__think_about_it_content_loaded = true;
 
+  // Development flag - set window.__THINK_DEV = true in your dev environment
+  // to enable debug helpers (overlays, price-debug, debug message handler).
+  const IS_DEV = Boolean(window.__THINK_DEV);
+
   /**
    * Debug function to verify content script loading
    */
@@ -27,8 +31,10 @@ if (!window.__think_about_it_content_loaded) {
   }, 5000);
   }
 
-  // Call this function when the script loads
-  debugContentScript();
+  // Call this function when the script loads (dev only)
+  if (IS_DEV) {
+    debugContentScript();
+  }
 
   // ...rest of file continues inside this guard...
 
@@ -985,6 +991,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // that the channel closed before a response was received.
   let willRespond = false;
 
+  // Short-circuit debugParser requests in production
+  if (message && message.action === "debugParser" && !IS_DEV) {
+    try { sendResponse({ error: 'Debug disabled in production' }); } catch (e) { /* ignore */ }
+    return false;
+  }
+
   if (message.action === "checkForProduct") {
     // Check if it's a product page and show the CTA if it is
     handlePageLoad();
@@ -1369,6 +1381,7 @@ window.amazonParser = {
  * This helps diagnose if price extraction is working correctly
  */
 function debugPriceExtraction() {
+  if (!IS_DEV) return null; // no-op in production builds
   console.group("Think About It: Price Extraction Debug");
   
   // Log all attempted methods
@@ -1435,8 +1448,6 @@ function debugPriceExtraction() {
     const el = document.getElementById('think-about-it-price-debug');
     if (el) el.remove();
   }, 10000);
-  
-  return finalPrice;
 }
 
 } // End of content script guard: window.__think_about_it_content_loaded
